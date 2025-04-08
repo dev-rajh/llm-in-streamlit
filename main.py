@@ -222,7 +222,7 @@ def main():
     with st.sidebar:
         st.write('This chatbot can chat normally or answer questions about a PDF file.')
         available_models = ollama.list()['models']
-        selected_model = st.selectbox("Select a model", [model['name'] for model in available_models])
+        selected_model = st.selectbox("Select a model", [model['model'] for model in available_models])
 
         uploaded_file = st.file_uploader("Upload a PDF file (optional)", type="pdf")
 
