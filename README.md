@@ -17,7 +17,7 @@ Features
 
 To run the Ollama PDF Chat Bot, you need to have the following dependencies installed:
 ```batch
-pip install streamlit ollama langchain torch requests langchain-community
+pip install streamlit ollama langchain torch requests langchain-community pypdf sentence-transformers faiss-cpu
 ```
 ## Configuration
 
