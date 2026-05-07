@@ -106,11 +106,11 @@ def get_response(query, chain):
     response = chain({'query': query})
     return response['result'].strip()
 
-def chat_without_pdf(prompt, selected_model):
-    llm = ChatOllama(
+def get_chat_llm(model, base_url):
+    return ChatOllama(
         temperature=0,
-        base_url=Config.OLLAMA_API_BASE_URL,
-        model=selected_model,
+        base_url=base_url,
+        model=model,
         streaming=True,
         top_k=10,
         top_p=0.3,
@@ -118,6 +118,9 @@ def chat_without_pdf(prompt, selected_model):
         verbose=False,
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
+
+def chat_without_pdf(prompt, selected_model):
+    llm = get_chat_llm(selected_model, Config.OLLAMA_API_BASE_URL)
     return llm.predict(prompt)
     
 class PDFHelper:
@@ -131,17 +134,7 @@ class PDFHelper:
                                               'pdf-doc-helper-store', str(uuid.uuid4()))
         os.makedirs(vector_store_directory, exist_ok=True)
 
-        llm = ChatOllama(
-            temperature=0,
-            base_url=self._ollama_api_base_url,
-            model=self._model_name,
-            streaming=True,
-            top_k=10,
-            top_p=0.3,
-            num_ctx=3072,
-            verbose=False,
-            device='cuda' if torch.cuda.is_available() else 'cpu'
-        )
+        llm = get_chat_llm(self._model_name, self._ollama_api_base_url)
 
         embed = load_embedding_model(model_name=self._embedding_model_name)
         
