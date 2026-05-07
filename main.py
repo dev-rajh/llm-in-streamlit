@@ -170,13 +170,14 @@ def chat_with_ollama(messages, selected_model, temperature, max_tokens, system_p
     )
     return response_stream
 
+
 def pull_model(model_name):
     print(f"Pulling model '{model_name}'...")
     url = f"{Config.OLLAMA_API_BASE_URL}/api/pull"
     data = json.dumps({"name": model_name})
     headers = {'Content-Type': 'application/json'}
 
-    with requests.post(url, data=data, headers=headers, stream=True) as response:
+    with requests.post(url, data=data, headers=headers, stream=True, timeout=30) as response:
         if response.status_code == 200:
             for chunk in response.iter_content(chunk_size=1024):
                 if chunk:
