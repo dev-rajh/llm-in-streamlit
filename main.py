@@ -71,8 +71,9 @@ def generate_chat_title(context, question):
     )
     return response['message']['content'].strip()
 
+@st.cache_resource
 def load_embedding_model(model_name, normalize_embedding=True):
-    print("Loading embedding model...")
+    print(f"Loading embedding model: {model_name}")
     hugging_face_embeddings = HuggingFaceEmbeddings(
         model_name=model_name,
         model_kwargs={'device': Config.HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE},
@@ -81,6 +82,43 @@ def load_embedding_model(model_name, normalize_embedding=True):
         }
     )
     return hugging_face_embeddings
+
+@st.cache_resource
+def get_vectorstore(file_content, file_name, _embedding_model):
+    print(f"Processing PDF: {file_name}")
+    file_hash = hashlib.md5(file_content).hexdigest()
+    vector_store_directory = os.path.join(str(Path.home()), 'langchain-store', 'vectorstore',
+                                          'pdf-doc-helper-store', file_hash)
+
+    if os.path.exists(vector_store_directory):
+        print(f"Loading existing vector store from {vector_store_directory}")
+        return FAISS.load_local(vector_store_directory, _embedding_model, allow_dangerous_deserialization=True)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+        temp_file.write(file_content)
+        temp_file_path = temp_file.name
+
+    try:
+        loader = PyPDFLoader(file_path=temp_file_path)
+        docs = loader.load()
+
+        if not docs:
+            return None
+
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+        documents = text_splitter.split_documents(docs)
+
+        if not documents:
+            return None
+
+        print(f"Creating embeddings for {file_name}...")
+        vectorstore = FAISS.from_documents(documents, _embedding_model)
+        os.makedirs(vector_store_directory, exist_ok=True)
+        vectorstore.save_local(vector_store_directory)
+        return vectorstore
+    finally:
+        if os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
 
 def create_embeddings(chunks, embedding_model, storing_path="vectorstore"):
     print("Creating embeddings...")
@@ -127,10 +165,6 @@ class PDFHelper:
         self._embedding_model_name = embedding_model_name
 
     def ask(self, uploaded_file, question):
-        vector_store_directory = os.path.join(str(Path.home()), 'langchain-store', 'vectorstore',
-                                              'pdf-doc-helper-store', str(uuid.uuid4()))
-        os.makedirs(vector_store_directory, exist_ok=True)
-
         llm = ChatOllama(
             temperature=0,
             base_url=self._ollama_api_base_url,
@@ -144,30 +178,10 @@ class PDFHelper:
         )
 
         embed = load_embedding_model(model_name=self._embedding_model_name)
-        
-        # Create a temporary file to save the uploaded file content
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-            temp_file.write(uploaded_file.getvalue())
-            temp_file_path = temp_file.name
-
-        # Use the temporary file path for PyPDFLoader
-        docs = PyPDFLoader(file_path=temp_file_path).load()
-        
-        # Clean up the temporary file
-        os.unlink(temp_file_path) 
-        
-        if not docs:
-            return "The uploaded PDF appears to be empty or unreadable. Please check the file and try again."
-
-        documents = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50).split_documents(docs)
-        
-        if not documents:
-            return "Unable to extract meaningful content from the PDF. The file might be empty, corrupted, or contain only images."
-
-        vectorstore = create_embeddings(chunks=documents, embedding_model=embed, storing_path=vector_store_directory)
+        vectorstore = get_vectorstore(uploaded_file.getvalue(), uploaded_file.name, embed)
         
         if vectorstore is None:
-            return "Unable to process the PDF content. The file might be empty or contain no extractable text."
+            return "Unable to process the PDF content. The file might be empty, corrupted, or contain no extractable text."
 
         retriever = vectorstore.as_retriever()
 
