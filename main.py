@@ -196,7 +196,7 @@ def pull_model(model_name):
     data = json.dumps({"name": model_name})
     headers = {'Content-Type': 'application/json'}
 
-    with requests.post(url, data=data, headers=headers, stream=True) as response:
+    with requests.post(url, data=data, headers=headers, stream=True, timeout=30) as response:
         if response.status_code == 200:
             for chunk in response.iter_content(chunk_size=1024):
                 if chunk:
