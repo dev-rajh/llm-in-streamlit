@@ -5,9 +5,6 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.document_loaders import PyPDFLoader
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import FAISS
-from langchain.chains import RetrievalQA
-from langchain.chat_models import ChatOllama
-from langchain_core.prompts import PromptTemplate
 import os
 import json
 from datetime import datetime
@@ -26,19 +23,39 @@ class Config:
     OLLAMA_API_BASE_URL = "http://localhost:11434"
     HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE = "cpu"
 
+# Project Management
+def get_project_dir(project_name):
+    if not project_name:
+        return None
+    project_dir = os.path.join("data", "projects", project_name)
+    os.makedirs(project_dir, exist_ok=True)
+    os.makedirs(os.path.join(project_dir, "files"), exist_ok=True)
+    return project_dir
+
+def get_project_chats_file(project_name):
+    project_dir = get_project_dir(project_name)
+    if project_dir:
+        return os.path.join(project_dir, "chats.json")
+    return "chats.json"
+
 # Function to save chats to a JSON file
-def save_chats():
-    with open("chats.json", "w") as f:
+def save_chats(project_name=None):
+    chats_file = get_project_chats_file(project_name)
+    with open(chats_file, "w") as f:
         json.dump(st.session_state.chats, f)
 
 # Function to load chats from a JSON file
-def load_chats():
-    if os.path.exists("chats.json"):
-        with open("chats.json", "r") as f:
+def load_chats(project_name=None):
+    chats_file = get_project_chats_file(project_name)
+    if os.path.exists(chats_file):
+        with open(chats_file, "r") as f:
             return json.load(f)
     return {}
 
-def process_pdf(file, chunk_size, chunk_overlap):
+def process_pdf(file, chunk_size, chunk_overlap, project_name="Default"):
+    project_dir = get_project_dir(project_name)
+    files_dir = os.path.join(project_dir, "files")
+
     file_hash = hashlib.md5(file.getvalue()).hexdigest()
     filename = f"temp_{file_hash}.pdf"
     
@@ -48,6 +65,14 @@ def process_pdf(file, chunk_size, chunk_overlap):
     loader = PyPDFLoader(filename)
     pages = loader.load_and_split()
 
+    # Save as MD file
+    md_filename = os.path.splitext(file.name)[0] + ".md"
+    md_filepath = os.path.join(files_dir, md_filename)
+
+    with open(md_filepath, "w", encoding="utf-8") as md_file:
+        for page in pages:
+            md_file.write(page.page_content + "\n\n")
+
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
@@ -56,7 +81,7 @@ def process_pdf(file, chunk_size, chunk_overlap):
 
     os.remove(filename)
 
-    return chunks, file.name
+    return chunks, file.name, md_filepath
 
 def create_context(chunks):
     return "\n\n".join([chunk.page_content for chunk in chunks])
@@ -70,6 +95,22 @@ def generate_chat_title(context, question):
         ]
     )
     return response['message']['content'].strip()
+
+def summarize_chat(messages, selected_model):
+    if len(messages) <= 10:
+        return ""
+
+    chat_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages[:-2]])
+
+    summary_prompt = f"Summarize the following chat history concisely, capturing the key points and context:\n\n{chat_text}"
+
+    response = ollama.chat(
+        model=selected_model,
+        messages=[{"role": "user", "content": summary_prompt}]
+    )
+
+    summary = response['message']['content'].strip()
+    return summary
 
 def load_embedding_model(model_name, normalize_embedding=True):
     print("Loading embedding model...")
@@ -87,108 +128,47 @@ def create_embeddings(chunks, embedding_model, storing_path="vectorstore"):
     if not chunks:
         print("Warning: No chunks to process. The PDF might be empty or unreadable.")
         return None
-    vectorstore = FAISS.from_documents(chunks, embedding_model)
+        
+    if os.path.exists(os.path.join(storing_path, "index.faiss")):
+        vectorstore = FAISS.load_local(storing_path, embedding_model, allow_dangerous_deserialization=True)
+        vectorstore.add_documents(chunks)
+    else:
+        vectorstore = FAISS.from_documents(chunks, embedding_model)
+        
     vectorstore.save_local(storing_path)
     return vectorstore
 
-def load_qa_chain(retriever, llm, prompt):
-    print("Loading QA chain...")
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        retriever=retriever,
-        chain_type="stuff",
-        return_source_documents=True,
-        chain_type_kwargs={'prompt': prompt}
-    )
-    return qa_chain
+def chat_with_ollama(messages, selected_model, temperature, max_tokens, system_prompt, custom_instruction, tone, context=None, summary=None):
+    # Construct the final system prompt
+    final_system_prompt = system_prompt
+    if custom_instruction:
+        final_system_prompt += f"\n\nCustom Instructions: {custom_instruction}"
+    if tone:
+        final_system_prompt += f"\n\nTone: Please respond in a {tone.lower()} tone."
+    if context:
+        final_system_prompt += f"\n\nUse the following context from uploaded documents to answer the user's questions:\n{context}"
+    if summary:
+        final_system_prompt += f"\n\nPrevious chat summary to keep in context:\n{summary}"
+        
+    formatted_messages = [{"role": "system", "content": final_system_prompt}]
+    
+    # If there's a summary, we only include the last 2 messages (the ones not summarized) to save tokens
+    messages_to_include = messages if not summary else messages[-2:]
+    
+    for msg in messages_to_include:
+        if msg["role"] != "system": # We've already set the overall system prompt
+            formatted_messages.append({"role": msg["role"], "content": msg["content"]})
 
-def get_response(query, chain):
-    response = chain({'query': query})
-    return response['result'].strip()
-
-def chat_without_pdf(prompt, selected_model):
-    llm = ChatOllama(
-        temperature=0,
-        base_url=Config.OLLAMA_API_BASE_URL,
+    response_stream = ollama.chat(
         model=selected_model,
-        streaming=True,
-        top_k=10,
-        top_p=0.3,
-        num_ctx=3072,
-        verbose=False,
-        device='cuda' if torch.cuda.is_available() else 'cpu'
+        messages=formatted_messages,
+        stream=True,
+        options={
+            "temperature": temperature,
+            "num_predict": max_tokens
+        }
     )
-    return llm.predict(prompt)
-    
-class PDFHelper:
-    def __init__(self, ollama_api_base_url, model_name=Config.MODEL, embedding_model_name=Config.EMBEDDING_MODEL_NAME):
-        self._ollama_api_base_url = ollama_api_base_url
-        self._model_name = model_name
-        self._embedding_model_name = embedding_model_name
-
-    def ask(self, uploaded_file, question):
-        vector_store_directory = os.path.join(str(Path.home()), 'langchain-store', 'vectorstore',
-                                              'pdf-doc-helper-store', str(uuid.uuid4()))
-        os.makedirs(vector_store_directory, exist_ok=True)
-
-        llm = ChatOllama(
-            temperature=0,
-            base_url=self._ollama_api_base_url,
-            model=self._model_name,
-            streaming=True,
-            top_k=10,
-            top_p=0.3,
-            num_ctx=3072,
-            verbose=False,
-            device='cuda' if torch.cuda.is_available() else 'cpu'
-        )
-
-        embed = load_embedding_model(model_name=self._embedding_model_name)
-        
-        # Create a temporary file to save the uploaded file content
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-            temp_file.write(uploaded_file.getvalue())
-            temp_file_path = temp_file.name
-
-        # Use the temporary file path for PyPDFLoader
-        docs = PyPDFLoader(file_path=temp_file_path).load()
-        
-        # Clean up the temporary file
-        os.unlink(temp_file_path) 
-        
-        if not docs:
-            return "The uploaded PDF appears to be empty or unreadable. Please check the file and try again."
-
-        documents = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50).split_documents(docs)
-        
-        if not documents:
-            return "Unable to extract meaningful content from the PDF. The file might be empty, corrupted, or contain only images."
-
-        vectorstore = create_embeddings(chunks=documents, embedding_model=embed, storing_path=vector_store_directory)
-        
-        if vectorstore is None:
-            return "Unable to process the PDF content. The file might be empty or contain no extractable text."
-
-        retriever = vectorstore.as_retriever()
-
-        template = """
-        ### System:
-        You are an honest assistant.
-        You will accept PDF files and you will answer the question asked by the user appropriately.
-        If you don't know the answer, just say you don't know. Don't try to make up an answer.
-    
-        ### Context:
-        {context}
-    
-        ### User:
-        {question}
-    
-        ### Response:
-        """
-
-        prompt = PromptTemplate.from_template(template)
-        chain = load_qa_chain(retriever, llm, prompt)
-        return get_response(question, chain)
+    return response_stream
 
 def pull_model(model_name):
     print(f"Pulling model '{model_name}'...")
@@ -208,8 +188,13 @@ def main():
     st.set_page_config(page_title="Ollama PDF Chat Bot")
     st.title("Ollama PDF Chat Bot")
 
+    os.makedirs(os.path.join("data", "projects"), exist_ok=True)
+
+    if "current_project" not in st.session_state:
+        st.session_state.current_project = "Default"
+
     if "chats" not in st.session_state:
-        st.session_state.chats = load_chats()
+        st.session_state.chats = load_chats(st.session_state.current_project)
     if "current_chat" not in st.session_state:
         st.session_state.current_chat = "New Chat"
     if "messages" not in st.session_state:
@@ -218,11 +203,61 @@ def main():
         st.session_state.context = ""
     if "current_file" not in st.session_state:
         st.session_state.current_file = None
+    if "chat_summary" not in st.session_state:
+        st.session_state.chat_summary = ""
 
     with st.sidebar:
+        st.header("Project Management")
+        project_names = [d for d in os.listdir(os.path.join("data", "projects")) if os.path.isdir(os.path.join("data", "projects", d))]
+        if "Default" not in project_names:
+            project_names = ["Default"] + project_names
+
+        selected_project = st.selectbox("Select a project", project_names, index=project_names.index(st.session_state.current_project) if st.session_state.current_project in project_names else 0)
+
+        new_project_name = st.text_input("Create new project")
+        if st.button("Create Project") and new_project_name:
+            if new_project_name not in project_names:
+                get_project_dir(new_project_name)
+                st.session_state.current_project = new_project_name
+                st.session_state.chats = load_chats(st.session_state.current_project)
+                st.session_state.current_chat = "New Chat"
+                st.session_state.messages = []
+                st.session_state.context = ""
+                st.session_state.current_file = None
+                st.session_state.chat_summary = ""
+                st.rerun()
+
+        if selected_project != st.session_state.current_project:
+            st.session_state.current_project = selected_project
+            st.session_state.chats = load_chats(st.session_state.current_project)
+            st.session_state.current_chat = "New Chat"
+            st.session_state.messages = []
+            st.session_state.context = ""
+            st.session_state.current_file = None
+            st.session_state.chat_summary = ""
+            st.rerun()
+
+        st.divider()
+
         st.write('This chatbot can chat normally or answer questions about a PDF file.')
-        available_models = ollama.list()['models']
-        selected_model = st.selectbox("Select a model", [model['model'] for model in available_models])
+
+        st.header("Model Selection & Parameters")
+        available_models = ollama.list().get('models', [])
+        if available_models:
+            st.session_state.selected_model = st.selectbox("Select a model", [model['model'] for model in available_models], key="model_select")
+        else:
+            st.session_state.selected_model = None
+            st.warning("No Ollama models found. Please make sure Ollama is running.")
+
+        st.session_state.temperature = st.slider("Temperature", min_value=0.0, max_value=1.0, value=0.0, step=0.1)
+        st.session_state.max_tokens = st.number_input("Max Tokens (num_predict)", min_value=100, max_value=8192, value=3072)
+
+        st.header("Personalisation")
+        st.session_state.tone = st.selectbox("Tone", ["Neutral", "Professional", "Casual", "Friendly", "Concise", "Detailed"])
+        st.session_state.system_prompt = st.text_area("System Prompt", value="You are a helpful, honest assistant.")
+        st.session_state.custom_instruction = st.text_area("Custom Instructions", value="")
+
+        st.divider()
 
         uploaded_file = st.file_uploader("Upload a PDF file (optional)", type="pdf")
 
@@ -232,31 +267,59 @@ def main():
             chunk_overlap = st.slider("Chunk Overlap", min_value=0, max_value=100, value=50, step=10)
 
             if st.session_state.current_file != uploaded_file.name:
-                chunks, filename = process_pdf(uploaded_file, chunk_size, chunk_overlap)
-                context = create_context(chunks)
-                st.session_state.context = context
-                st.session_state.current_file = filename
-                
-                chat_title = f"Chat about {filename}"
-                st.session_state.current_chat = chat_title
-                st.session_state.chats[chat_title] = {
-                    'messages': [],
-                    'context': context,
-                    'file': filename
-                }
-                st.session_state.messages = []
-                
-                system_msg = f"New file uploaded: {filename}. You can now ask questions about this document."
-                st.session_state.messages.append({"role": "system", "content": system_msg, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
-                
-                save_chats()
+                with st.spinner("Processing PDF..."):
+                    chunks, filename, md_filepath = process_pdf(uploaded_file, chunk_size, chunk_overlap, st.session_state.current_project)
+
+                    # Update vectorstore
+                    project_dir = get_project_dir(st.session_state.current_project)
+                    vectorstore_dir = os.path.join(project_dir, "vectorstore")
+                    os.makedirs(vectorstore_dir, exist_ok=True)
+
+                    embed = load_embedding_model(model_name=Config.EMBEDDING_MODEL_NAME)
+                    create_embeddings(chunks, embed, storing_path=vectorstore_dir)
+
+                    context = create_context(chunks)
+                    st.session_state.context = context
+                    st.session_state.current_file = filename
+                    st.session_state.current_md_file = md_filepath
+
+                    chat_title = f"Chat about {filename}"
+                    st.session_state.current_chat = chat_title
+                    st.session_state.chats[chat_title] = {
+                        'messages': [],
+                        'context': context,
+                        'file': filename
+                    }
+                    st.session_state.messages = []
+
+                    system_msg = f"New file uploaded: {filename}. You can now ask questions about this document."
+                    st.session_state.messages.append({"role": "system", "content": system_msg, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+
+                    save_chats(st.session_state.current_project)
                 st.rerun()
+
+            if "current_md_file" in st.session_state and st.session_state.current_md_file:
+                with open(st.session_state.current_md_file, "r", encoding="utf-8") as f:
+                    md_content = f.read()
+                st.download_button(
+                    label="Download as MD",
+                    data=md_content,
+                    file_name=os.path.basename(st.session_state.current_md_file),
+                    mime="text/markdown"
+                )
         else:
             st.write("Regular chat mode: Ask any questions.")
 
-    # Chat selection
+    # Chat selection and Search
+    st.sidebar.header("Chat Search")
+    search_query = st.sidebar.text_input("Search chats")
+
     chat_names = ["New Chat"] + list(st.session_state.chats.keys())
-    current_chat = st.selectbox("Select a chat", chat_names, index=chat_names.index(st.session_state.current_chat))
+
+    if search_query:
+        chat_names = ["New Chat"] + [chat for chat in list(st.session_state.chats.keys()) if search_query.lower() in chat.lower() or any(search_query.lower() in msg['content'].lower() for msg in st.session_state.chats[chat]['messages'])]
+
+    current_chat = st.selectbox("Select a chat", chat_names, index=chat_names.index(st.session_state.current_chat) if st.session_state.current_chat in chat_names else 0)
 
 
     if current_chat != st.session_state.current_chat:
@@ -265,19 +328,36 @@ def main():
             st.session_state.messages = []
             st.session_state.context = ""
             st.session_state.current_file = None
+            st.session_state.chat_summary = ""
         else:
             st.session_state.current_chat = current_chat
             st.session_state.messages = st.session_state.chats[current_chat]['messages']
             st.session_state.context = st.session_state.chats[current_chat]['context']
             st.session_state.current_file = st.session_state.chats[current_chat]['file']
+            st.session_state.chat_summary = st.session_state.chats[current_chat].get('summary', "")
         
         st.rerun()
         
     # Display chat messages
-    for message in st.session_state.messages:
+    for i, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
             st.markdown(f"**{message['timestamp']}**")
             st.markdown(message["content"])
+            if message["role"] == "assistant":
+                if "stats" in message:
+                    stats = message["stats"]
+                    st.caption(f"Tokens: {stats.get('prompt_eval_count', 0)} prompt, {stats.get('eval_count', 0)} completion | Duration: {stats.get('total_duration', 0)/1e9:.2f}s")
+
+                # Option to save response
+                save_key = f"save_{i}"
+                if st.button("Save response as file", key=save_key):
+                    project_dir = get_project_dir(st.session_state.current_project)
+                    files_dir = os.path.join(project_dir, "files")
+                    response_filename = f"response_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                    response_filepath = os.path.join(files_dir, response_filename)
+                    with open(response_filepath, "w", encoding="utf-8") as f:
+                        f.write(message["content"])
+                    st.success(f"Response saved to {response_filepath}")
 
     # Chat input and response handling
     if prompt := st.chat_input("What is your question?"):
@@ -291,30 +371,66 @@ def main():
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
             full_response = ""
+            final_stats = {}
             
-            if st.session_state.current_file is None:
-                full_response = chat_without_pdf(prompt, selected_model)
-            else:
-                pdf_helper = PDFHelper(
-                    ollama_api_base_url=Config.OLLAMA_API_BASE_URL,
-                    model_name=selected_model
-                )
-                full_response = pdf_helper.ask(
-                    uploaded_file=uploaded_file,
-                    question=prompt
-                )
+            # Extract relevant context if using a PDF
+            context_to_use = None
+            if st.session_state.current_file:
+                project_dir = get_project_dir(st.session_state.current_project)
+                vectorstore_dir = os.path.join(project_dir, "vectorstore")
+                if os.path.exists(os.path.join(vectorstore_dir, "index.faiss")):
+                    embed = load_embedding_model(model_name=Config.EMBEDDING_MODEL_NAME)
+                    vectorstore = FAISS.load_local(vectorstore_dir, embed, allow_dangerous_deserialization=True)
+                    docs = vectorstore.similarity_search(prompt, k=4)
+                    context_to_use = "\n\n".join([doc.page_content for doc in docs])
             
-            message_placeholder.markdown(full_response)
-        
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        st.session_state.messages.append({"role": "assistant", "content": full_response, "timestamp": timestamp})
+            # Generate response stream
+            if st.session_state.selected_model:
+                stream = chat_with_ollama(
+                    messages=st.session_state.messages,
+                    selected_model=st.session_state.selected_model,
+                    temperature=st.session_state.temperature,
+                    max_tokens=st.session_state.max_tokens,
+                    system_prompt=st.session_state.system_prompt,
+                    custom_instruction=st.session_state.custom_instruction,
+                    tone=st.session_state.tone,
+                    context=context_to_use,
+                    summary=st.session_state.chat_summary
+                )
 
-        
+                for chunk in stream:
+                    if 'message' in chunk and 'content' in chunk['message']:
+                        full_response += chunk['message']['content']
+                        message_placeholder.markdown(full_response + "▌")
+                    if chunk.get('done'):
+                        final_stats = chunk
+
+                message_placeholder.markdown(full_response)
+
+                # Update messages
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": full_response,
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "stats": {
+                        "total_duration": final_stats.get("total_duration"),
+                        "prompt_eval_count": final_stats.get("prompt_eval_count"),
+                        "eval_count": final_stats.get("eval_count")
+                    }
+                })
+
+                # Check for summarization
+                if len(st.session_state.messages) > 10:
+                    st.session_state.chat_summary = summarize_chat(st.session_state.messages, st.session_state.selected_model)
+            else:
+                st.error("Please ensure Ollama is running and a model is selected.")
+
         # Update the chat in st.session_state.chats
         if st.session_state.current_chat != "New Chat":
             st.session_state.chats[st.session_state.current_chat]['messages'] = st.session_state.messages
+            st.session_state.chats[st.session_state.current_chat]['summary'] = st.session_state.chat_summary
 
-        save_chats()
+        save_chats(st.session_state.current_project)
         st.rerun()
 
     if st.session_state.current_file:
@@ -328,6 +444,7 @@ def main():
         st.session_state.messages = []
         st.session_state.context = ""
         st.session_state.current_file = None
+        st.session_state.chat_summary = ""
         st.rerun()
 
 if __name__ == "__main__":
