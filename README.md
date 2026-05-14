@@ -64,8 +64,6 @@ streamlit run main.py
 
 * **create_context(chunks)**: Creates a context string from the PDF chunks.
 
-* **generate_chat_title(context, question)**: Generates a title for the chat based on the context and question.
-
 ### Embeddings and QA Chain
 
 * **load_embedding_model(model_name, normalize_embedding=True)**: Loads the embedding model.

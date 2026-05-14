@@ -61,16 +61,6 @@ def process_pdf(file, chunk_size, chunk_overlap):
 def create_context(chunks):
     return "\n\n".join([chunk.page_content for chunk in chunks])
 
-def generate_chat_title(context, question):
-    response = ollama.chat(
-        model="orca-mini:3b",
-        messages=[
-            {"role": "system", "content": "Generate a short, descriptive title (max 6 words) for a chat based on the given context and question."},
-            {"role": "user", "content": f"Context: {context[:500]}...\n\nQuestion: {question}\n\nTitle:"}
-        ]
-    )
-    return response['message']['content'].strip()
-
 def load_embedding_model(model_name, normalize_embedding=True):
     print("Loading embedding model...")
     hugging_face_embeddings = HuggingFaceEmbeddings(
