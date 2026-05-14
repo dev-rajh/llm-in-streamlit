@@ -39,24 +39,27 @@ def load_chats():
     return {}
 
 def process_pdf(file, chunk_size, chunk_overlap):
-    file_hash = hashlib.md5(file.getvalue()).hexdigest()
-    filename = f"temp_{file_hash}.pdf"
-    
-    with open(filename, "wb") as f:
-        f.write(file.getbuffer())
+    filename = None
+    try:
+        file_hash = hashlib.sha256(file.getvalue()).hexdigest()
+        filename = f"temp_{file_hash}.pdf"
 
-    loader = PyPDFLoader(filename)
-    pages = loader.load_and_split()
+        with open(filename, "wb") as f:
+            f.write(file.getbuffer())
 
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-    )
-    chunks = text_splitter.split_documents(pages)
+        loader = PyPDFLoader(filename)
+        pages = loader.load_and_split()
 
-    os.remove(filename)
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+        chunks = text_splitter.split_documents(pages)
 
-    return chunks, file.name
+        return chunks, file.name
+    finally:
+        if filename is not None and os.path.exists(filename):
+            os.remove(filename)
 
 def create_context(chunks):
     return "\n\n".join([chunk.page_content for chunk in chunks])
