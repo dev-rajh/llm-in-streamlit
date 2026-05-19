@@ -1,13 +1,10 @@
 
 import streamlit as st
 import ollama
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.document_loaders import PyPDFLoader
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import FAISS
-from langchain.chains import RetrievalQA
-from langchain.chat_models import ChatOllama
-from langchain_core.prompts import PromptTemplate
+import pypdf
+import faiss
+import numpy as np
+from sentence_transformers import SentenceTransformer
 import os
 import json
 from datetime import datetime
@@ -20,6 +17,12 @@ import requests
 
 
 # Configuration
+
+class Document:
+    def __init__(self, page_content, metadata=None):
+        self.page_content = page_content
+        self.metadata = metadata or {}
+
 class Config:
     MODEL = "orca-mini:3b"
     EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
@@ -38,6 +41,17 @@ def load_chats():
             return json.load(f)
     return {}
 
+
+def split_text_into_chunks(text, chunk_size, chunk_overlap):
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunk = text[start:end]
+        chunks.append(Document(page_content=chunk))
+        start += chunk_size - chunk_overlap
+    return chunks
+
 def process_pdf(file, chunk_size, chunk_overlap):
     filename = None
     try:
@@ -47,19 +61,50 @@ def process_pdf(file, chunk_size, chunk_overlap):
         with open(filename, "wb") as f:
             f.write(file.getbuffer())
 
-        loader = PyPDFLoader(filename)
-        pages = loader.load_and_split()
+        reader = pypdf.PdfReader(filename)
+        text = ""
+        for page in reader.pages:
+            extracted_text = page.extract_text()
+            if extracted_text:
+                text += extracted_text + "\n"
 
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-        )
-        chunks = text_splitter.split_documents(pages)
+        chunks = split_text_into_chunks(text, chunk_size, chunk_overlap)
 
         return chunks, file.name
     finally:
         if filename is not None and os.path.exists(filename):
             os.remove(filename)
+
+
+class SimpleVectorStore:
+    def __init__(self, index, chunks, embedding_model):
+        self.index = index
+        self.chunks = chunks
+        self.embedding_model = embedding_model
+
+    def as_retriever(self, k=4):
+        class Retriever:
+            def __init__(self, store, k):
+                self.store = store
+                self.k = k
+
+            def get_relevant_documents(self, query):
+                query_embedding = self.store.embedding_model.encode([query])
+                distances, indices = self.store.index.search(np.array(query_embedding).astype('float32'), self.k)
+
+                results = []
+                for i in indices[0]:
+                    if i != -1 and i < len(self.store.chunks):
+                        results.append(self.store.chunks[i])
+                return results
+
+        return Retriever(self, k)
+
+    def save_local(self, folder_path):
+        os.makedirs(folder_path, exist_ok=True)
+        faiss.write_index(self.index, os.path.join(folder_path, "index.faiss"))
+        with open(os.path.join(folder_path, "chunks.json"), "w") as f:
+            json.dump([chunk.page_content for chunk in self.chunks], f)
 
 def create_context(chunks):
     return "\n\n".join([chunk.page_content for chunk in chunks])
@@ -67,55 +112,47 @@ def create_context(chunks):
 @st.cache_resource
 def load_embedding_model(model_name, normalize_embedding=True):
     print("Loading embedding model...")
-    hugging_face_embeddings = HuggingFaceEmbeddings(
-        model_name=model_name,
-        model_kwargs={'device': Config.HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE},
-        encode_kwargs={
-            'normalize_embeddings': normalize_embedding
-        }
-    )
-    return hugging_face_embeddings
+    return SentenceTransformer(model_name, device=Config.HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE)
 
 def create_embeddings(chunks, embedding_model, storing_path="vectorstore"):
     print("Creating embeddings...")
     if not chunks:
         print("Warning: No chunks to process. The PDF might be empty or unreadable.")
         return None
-    vectorstore = FAISS.from_documents(chunks, embedding_model)
+
+    texts = [chunk.page_content for chunk in chunks]
+    embeddings = embedding_model.encode(texts)
+
+    dimension = embeddings.shape[1]
+    index = faiss.IndexFlatL2(dimension)
+    index.add(np.array(embeddings).astype('float32'))
+
+    vectorstore = SimpleVectorStore(index, chunks, embedding_model)
     vectorstore.save_local(storing_path)
     return vectorstore
 
-def load_qa_chain(retriever, llm, prompt):
-    print("Loading QA chain...")
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        retriever=retriever,
-        chain_type="stuff",
-        return_source_documents=True,
-        chain_type_kwargs={'prompt': prompt}
-    )
-    return qa_chain
+def get_response(query, retriever, model, base_url, template):
+    relevant_docs = retriever.get_relevant_documents(query)
+    context = "\n\n".join([doc.page_content for doc in relevant_docs])
 
-def get_response(query, chain):
-    response = chain({'query': query})
-    return response['result'].strip()
+    prompt = template.format(context=context, question=query)
 
-def get_chat_llm(model, base_url):
-    return ChatOllama(
-        temperature=0,
-        base_url=base_url,
-        model=model,
-        streaming=True,
-        top_k=10,
-        top_p=0.3,
-        num_ctx=3072,
-        verbose=False,
-        device='cuda' if torch.cuda.is_available() else 'cpu'
-    )
+    client = ollama.Client(host=base_url)
+
+    response = ""
+    for chunk in client.chat(model=model, messages=[{'role': 'user', 'content': prompt}], stream=True):
+        if 'message' in chunk and 'content' in chunk['message']:
+            response += chunk['message']['content']
+
+    return response.strip()
 
 def chat_without_pdf(prompt, selected_model):
-    llm = get_chat_llm(selected_model, Config.OLLAMA_API_BASE_URL)
-    return llm.predict(prompt)
+    client = ollama.Client(host=Config.OLLAMA_API_BASE_URL)
+    response = ""
+    for chunk in client.chat(model=selected_model, messages=[{'role': 'user', 'content': prompt}], stream=True):
+        if 'message' in chunk and 'content' in chunk['message']:
+            response += chunk['message']['content']
+    return response
     
 class PDFHelper:
     def __init__(self, ollama_api_base_url, model_name=Config.MODEL, embedding_model_name=Config.EMBEDDING_MODEL_NAME):
@@ -124,11 +161,9 @@ class PDFHelper:
         self._embedding_model_name = embedding_model_name
 
     def ask(self, uploaded_file, question):
-        vector_store_directory = os.path.join(str(Path.home()), 'langchain-store', 'vectorstore',
+        vector_store_directory = os.path.join(str(Path.home()), 'pdf-store', 'vectorstore',
                                               'pdf-doc-helper-store', str(uuid.uuid4()))
         os.makedirs(vector_store_directory, exist_ok=True)
-
-        llm = get_chat_llm(self._model_name, self._ollama_api_base_url)
 
         embed = load_embedding_model(model_name=self._embedding_model_name)
         
@@ -137,16 +172,21 @@ class PDFHelper:
             temp_file.write(uploaded_file.getvalue())
             temp_file_path = temp_file.name
 
-        # Use the temporary file path for PyPDFLoader
-        docs = PyPDFLoader(file_path=temp_file_path).load()
+        # Use pypdf to load text
+        reader = pypdf.PdfReader(temp_file_path)
+        text = ""
+        for page in reader.pages:
+            extracted_text = page.extract_text()
+            if extracted_text:
+                text += extracted_text + "\n"
         
         # Clean up the temporary file
         os.unlink(temp_file_path) 
         
-        if not docs:
+        if not text.strip():
             return "The uploaded PDF appears to be empty or unreadable. Please check the file and try again."
 
-        documents = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50).split_documents(docs)
+        documents = split_text_into_chunks(text, chunk_size=500, chunk_overlap=50)
         
         if not documents:
             return "Unable to extract meaningful content from the PDF. The file might be empty, corrupted, or contain only images."
@@ -173,9 +213,7 @@ class PDFHelper:
         ### Response:
         """
 
-        prompt = PromptTemplate.from_template(template)
-        chain = load_qa_chain(retriever, llm, prompt)
-        return get_response(question, chain)
+        return get_response(question, retriever, self._model_name, self._ollama_api_base_url, template)
 
 def pull_model(model_name):
     print(f"Pulling model '{model_name}'...")
