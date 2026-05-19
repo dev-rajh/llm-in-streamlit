@@ -64,6 +64,7 @@ def process_pdf(file, chunk_size, chunk_overlap):
 def create_context(chunks):
     return "\n\n".join([chunk.page_content for chunk in chunks])
 
+@st.cache_resource
 def load_embedding_model(model_name, normalize_embedding=True):
     print("Loading embedding model...")
     hugging_face_embeddings = HuggingFaceEmbeddings(
