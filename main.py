@@ -41,11 +41,9 @@ def load_chats():
 def process_pdf(file, chunk_size, chunk_overlap):
     filename = None
     try:
-        file_hash = hashlib.sha256(file.getvalue()).hexdigest()
-        filename = f"temp_{file_hash}.pdf"
-
-        with open(filename, "wb") as f:
-            f.write(file.getbuffer())
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            temp_file.write(file.getbuffer())
+            filename = temp_file.name
 
         loader = PyPDFLoader(filename)
         pages = loader.load_and_split()
@@ -132,16 +130,19 @@ class PDFHelper:
 
         embed = load_embedding_model(model_name=self._embedding_model_name)
         
+        temp_file_path = None
         # Create a temporary file to save the uploaded file content
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-            temp_file.write(uploaded_file.getvalue())
-            temp_file_path = temp_file.name
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+                temp_file.write(uploaded_file.getvalue())
+                temp_file_path = temp_file.name
 
-        # Use the temporary file path for PyPDFLoader
-        docs = PyPDFLoader(file_path=temp_file_path).load()
-        
-        # Clean up the temporary file
-        os.unlink(temp_file_path) 
+            # Use the temporary file path for PyPDFLoader
+            docs = PyPDFLoader(file_path=temp_file_path).load()
+        finally:
+            # Clean up the temporary file
+            if temp_file_path is not None and os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
         
         if not docs:
             return "The uploaded PDF appears to be empty or unreadable. Please check the file and try again."

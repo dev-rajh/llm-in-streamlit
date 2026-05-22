@@ -1,0 +1,4 @@
+## 2024-05-22 - Fix insecure temporary file handling and potential disk leak
+**Vulnerability:** Predictable filename generation using `hashlib.sha256` in `process_pdf` and unhandled exceptions during file parsing in `PDFHelper.ask` could cause temporary files to accumulate, leading to disk exhaustion and potential file collision or injection attacks.
+**Learning:** Python's `tempfile.NamedTemporaryFile` with `delete=False` is safer, but when relying on manual cleanup, operations that might fail (like document loading) must be guarded with `try...finally` to ensure `os.unlink` executes.
+**Prevention:** Always wrap temporary file usage in `try...finally` blocks when using `delete=False` and initialize filename variables to `None` before the `try` block. Avoid rolling custom hash-based temporary filenames and use built-in, cryptographically secure functions like `tempfile`.
