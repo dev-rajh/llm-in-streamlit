@@ -41,11 +41,11 @@ def load_chats():
 def process_pdf(file, chunk_size, chunk_overlap):
     filename = None
     try:
-        file_hash = hashlib.sha256(file.getvalue()).hexdigest()
-        filename = f"temp_{file_hash}.pdf"
-
-        with open(filename, "wb") as f:
-            f.write(file.getbuffer())
+        # Security Fix: Use tempfile.NamedTemporaryFile instead of predictable hash-based filenames
+        # to prevent file collision and injection attacks.
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            temp_file.write(file.getbuffer())
+            filename = temp_file.name
 
         loader = PyPDFLoader(filename)
         pages = loader.load_and_split()

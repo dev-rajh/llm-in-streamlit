@@ -1,0 +1,4 @@
+## 2024-03-24 - [Insecure Temporary File Generation]
+**Vulnerability:** Found `hashlib.sha256(file.getvalue()).hexdigest()` being used to create temporary filenames in `process_pdf` function in `main.py`.
+**Learning:** Generating temporary filenames using predictable hash functions based on file content can lead to file collisions and potential file injection or traversal attacks. This codebase needs to avoid custom hashing for temporary file generation and utilize secure system APIs.
+**Prevention:** Use standard, secure libraries like `tempfile.NamedTemporaryFile` with `delete=False` (for operations that require a filepath like PyPDFLoader) to let the operating system securely create and manage temporary files with unpredictable names and safe permissions, and clean them up manually in a `finally` block to prevent resource leaks.
