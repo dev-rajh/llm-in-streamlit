@@ -7,39 +7,52 @@ sys.modules['streamlit'] = MagicMock()
 sys.modules['ollama'] = MagicMock()
 sys.modules['torch'] = MagicMock()
 sys.modules['requests'] = MagicMock()
-sys.modules['langchain.text_splitter'] = MagicMock()
-sys.modules['langchain.document_loaders'] = MagicMock()
-sys.modules['langchain.embeddings'] = MagicMock()
-sys.modules['langchain.vectorstores'] = MagicMock()
-sys.modules['langchain.chains'] = MagicMock()
-sys.modules['langchain.chat_models'] = MagicMock()
-sys.modules['langchain_core.prompts'] = MagicMock()
+sys.modules['pypdf'] = MagicMock()
+sys.modules['sentence_transformers'] = MagicMock()
+sys.modules['faiss'] = MagicMock()
+sys.modules['numpy'] = MagicMock()
 
-from main import get_response, create_embeddings
+from main import get_response, create_embeddings, Document
 
 def test_get_response_basic():
-    # Mock chain
-    def mock_chain(input_dict):
-        assert input_dict['query'] == "test query"
-        return {'result': "  test result  "}
+    # Mock retriever
+    mock_retriever = MagicMock()
+    mock_retriever.get_relevant_documents.return_value = [Document(page_content="doc content")]
 
-    result = get_response("test query", mock_chain)
+    # Mock ollama chat via patching inside get_response is tricky if it imports inside,
+    # but we already mocked sys.modules['ollama']. Let's adjust our mock.
+    mock_client_instance = MagicMock()
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+
+    mock_client_instance.chat.return_value = [
+        {'message': {'content': '  test '}},
+        {'message': {'content': 'result  '}}
+    ]
+
+    template = "Context: {context}\\nQuestion: {question}"
+    result = get_response("test query", mock_retriever, "test-model", "http://test", template)
+
     assert result == "test result"
+    mock_retriever.get_relevant_documents.assert_called_once_with("test query")
+    sys.modules['ollama'].Client.assert_called_once_with(host="http://test")
+    mock_client_instance.chat.assert_called_once()
+
+    args, kwargs = mock_client_instance.chat.call_args
+    assert kwargs['model'] == "test-model"
+    assert kwargs['messages'][0]['content'] == "Context: doc content\\nQuestion: test query"
+    assert kwargs['stream'] is True
 
 def test_get_response_empty_result():
-    def mock_chain(input_dict):
-        return {'result': "   "}
+    mock_retriever = MagicMock()
+    mock_retriever.get_relevant_documents.return_value = []
 
-    result = get_response("test query", mock_chain)
+    mock_client_instance = MagicMock()
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+    mock_client_instance.chat.return_value = [{'message': {'content': '   '}}]
+
+    template = "{context} {question}"
+    result = get_response("test query", mock_retriever, "test-model", "http://test", template)
     assert result == ""
-
-def test_get_response_missing_key():
-    def mock_chain(input_dict):
-        return {'wrong_key': "value"}
-
-    with pytest.raises(KeyError):
-        get_response("test query", mock_chain)
-
 
 def test_create_embeddings_empty_chunks():
     embedding_model = MagicMock()
@@ -52,15 +65,30 @@ def test_create_embeddings_none_chunks():
     assert result is None
 
 def test_create_embeddings_with_chunks():
-    chunks = ['chunk1', 'chunk2']
+    chunks = [Document('chunk1'), Document('chunk2')]
     embedding_model = MagicMock()
 
-    # We need to mock FAISS.from_documents which is accessed through the mocked langchain.vectorstores module
-    mock_vectorstore = MagicMock()
-    sys.modules['langchain.vectorstores'].FAISS.from_documents.return_value = mock_vectorstore
+    # Mock encode to return dummy embeddings
+    import numpy as np
+    dummy_embeddings = MagicMock()
+    dummy_embeddings.shape = (2, 768)
+    embedding_model.encode.return_value = dummy_embeddings
 
-    result = create_embeddings(chunks, embedding_model, storing_path="custom_path")
+    # Mock faiss.IndexFlatL2
+    mock_index = MagicMock()
+    sys.modules['faiss'].IndexFlatL2.return_value = mock_index
 
-    sys.modules['langchain.vectorstores'].FAISS.from_documents.assert_called_once_with(chunks, embedding_model)
-    mock_vectorstore.save_local.assert_called_once_with("custom_path")
-    assert result == mock_vectorstore
+    # We also mock os.makedirs and faiss.write_index which are called in save_local
+    import os
+    from unittest.mock import patch
+
+    with patch('os.makedirs'), patch('builtins.open'):
+        result = create_embeddings(chunks, embedding_model, storing_path="custom_path")
+
+    sys.modules['faiss'].IndexFlatL2.assert_called_once_with(768)
+
+    # We mocked numpy so we need to be careful, but we just verify it runs without error
+    assert result is not None
+    assert result.index == mock_index
+    assert result.chunks == chunks
+    assert result.embedding_model == embedding_model
