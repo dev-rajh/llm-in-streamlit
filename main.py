@@ -56,8 +56,9 @@ def process_pdf(file, chunk_size, chunk_overlap):
     filename = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-            temp_file.write(file.getbuffer())
+            # 🛡️ Sentinel: Assign filename before writing to ensure cleanup if disk is full
             filename = temp_file.name
+            temp_file.write(file.getbuffer())
 
         reader = pypdf.PdfReader(filename)
         text = ""
@@ -165,21 +166,25 @@ class PDFHelper:
 
         embed = load_embedding_model(model_name=self._embedding_model_name)
         
-        # Create a temporary file to save the uploaded file content
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-            temp_file.write(uploaded_file.getvalue())
-            temp_file_path = temp_file.name
-
-        # Use pypdf to load text
-        reader = pypdf.PdfReader(temp_file_path)
+        temp_file_path = None
         text = ""
-        for page in reader.pages:
-            extracted_text = page.extract_text()
-            if extracted_text:
-                text += extracted_text + "\n"
-        
-        # Clean up the temporary file
-        os.unlink(temp_file_path) 
+        try:
+            # Create a temporary file to save the uploaded file content
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+                # 🛡️ Sentinel: Assign filename before writing to ensure cleanup in finally block
+                temp_file_path = temp_file.name
+                temp_file.write(uploaded_file.getvalue())
+
+            # Use pypdf to load text
+            reader = pypdf.PdfReader(temp_file_path)
+            for page in reader.pages:
+                extracted_text = page.extract_text()
+                if extracted_text:
+                    text += extracted_text + "\n"
+        finally:
+            # 🛡️ Sentinel: Ensure the temporary file is cleaned up even if reading/writing fails
+            if temp_file_path is not None and os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
         
         if not text.strip():
             return "The uploaded PDF appears to be empty or unreadable. Please check the file and try again."
