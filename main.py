@@ -139,18 +139,28 @@ def get_response(query, retriever, model, base_url, template):
     client = ollama.Client(host=base_url)
 
     response = ""
-    for chunk in client.chat(model=model, messages=[{'role': 'user', 'content': prompt}], stream=True):
-        if 'message' in chunk and 'content' in chunk['message']:
-            response += chunk['message']['content']
+    try:
+        # 🛡️ Sentinel: Handle external API errors to prevent stack trace leakage
+        for chunk in client.chat(model=model, messages=[{'role': 'user', 'content': prompt}], stream=True):
+            if 'message' in chunk and 'content' in chunk['message']:
+                response += chunk['message']['content']
+    except Exception as e:
+        print(f"Error communicating with Ollama API: {e}")
+        return "An error occurred while communicating with the AI service. Please try again later."
 
     return response.strip()
 
 def chat_without_pdf(prompt, selected_model):
     client = ollama.Client(host=Config.OLLAMA_API_BASE_URL)
     response = ""
-    for chunk in client.chat(model=selected_model, messages=[{'role': 'user', 'content': prompt}], stream=True):
-        if 'message' in chunk and 'content' in chunk['message']:
-            response += chunk['message']['content']
+    try:
+        # 🛡️ Sentinel: Handle external API errors to prevent stack trace leakage
+        for chunk in client.chat(model=selected_model, messages=[{'role': 'user', 'content': prompt}], stream=True):
+            if 'message' in chunk and 'content' in chunk['message']:
+                response += chunk['message']['content']
+    except Exception as e:
+        print(f"Error communicating with Ollama API: {e}")
+        return "An error occurred while communicating with the AI service. Please try again later."
     return response
     
 class PDFHelper:
