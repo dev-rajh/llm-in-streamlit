@@ -242,6 +242,15 @@ def pull_model(model_name):
         else:
             print(f"Error: {response.status_code} - {response.text}")
 
+@st.cache_data(ttl=60)
+def get_available_models():
+    """🛡️ Sentinel: Wrap external API call to prevent unhandled exceptions and stack trace leaks."""
+    try:
+        return ollama.list().get('models', [])
+    except Exception as e:
+        print(f"Error fetching Ollama models: {e}")
+        return []
+
 def main():
     st.set_page_config(page_title="Ollama PDF Chat Bot")
     st.title("Ollama PDF Chat Bot")
@@ -259,8 +268,13 @@ def main():
 
     with st.sidebar:
         st.write('This chatbot can chat normally or answer questions about a PDF file.')
-        available_models = ollama.list()['models']
-        selected_model = st.selectbox("Select a model", [model['model'] for model in available_models])
+        available_models = get_available_models()
+
+        if not available_models:
+            st.error("Could not connect to the Ollama service. Please ensure it is running.")
+            st.stop()
+
+        selected_model = st.selectbox("Select a model", [model.get('model', 'Unknown') for model in available_models])
 
         uploaded_file = st.file_uploader("Upload a PDF file (optional)", type="pdf")
 
