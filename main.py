@@ -70,6 +70,10 @@ def process_pdf(file, chunk_size, chunk_overlap):
         chunks = split_text_into_chunks(text, chunk_size, chunk_overlap)
 
         return chunks, file.name
+    except Exception as e:
+        print(f"Error processing PDF: {e}")
+        st.error("An error occurred while processing the PDF file. Please ensure it is a valid PDF and try again.")
+        st.stop()
     finally:
         if filename is not None and os.path.exists(filename):
             os.remove(filename)
@@ -191,6 +195,9 @@ class PDFHelper:
                 extracted_text = page.extract_text()
                 if extracted_text:
                     text += extracted_text + "\n"
+        except Exception as e:
+            print(f"Error extracting text from PDF in PDFHelper.ask: {e}")
+            return "An error occurred while reading the PDF file. It might be malformed or corrupted."
         finally:
             # 🛡️ Sentinel: Ensure the temporary file is cleaned up even if reading/writing fails
             if temp_file_path is not None and os.path.exists(temp_file_path):
@@ -234,13 +241,16 @@ def pull_model(model_name):
     data = json.dumps({"name": model_name})
     headers = {'Content-Type': 'application/json'}
 
-    with requests.post(url, data=data, headers=headers, stream=True, timeout=30) as response:
-        if response.status_code == 200:
-            for chunk in response.iter_content(chunk_size=1024):
-                if chunk:
-                    print(chunk.decode('utf-8'), end='')
-        else:
-            print(f"Error: {response.status_code} - {response.text}")
+    try:
+        with requests.post(url, data=data, headers=headers, stream=True, timeout=30) as response:
+            if response.status_code == 200:
+                for chunk in response.iter_content(chunk_size=1024):
+                    if chunk:
+                        print(chunk.decode('utf-8'), end='')
+            else:
+                print(f"Error: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"Network error while pulling model: {e}")
 
 @st.cache_data(ttl=60)
 def get_available_models():
