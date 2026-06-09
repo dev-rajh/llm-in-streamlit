@@ -17,3 +17,8 @@
 **Vulnerability:** The application was calling `ollama.list()['models']` during the Streamlit sidebar initialization without a `try...except` block.
 **Learning:** If the required backend service (e.g., Ollama) is not running when the Streamlit UI initializes, the application instantly crashes, dumping an unhandled exception stack trace to the frontend, revealing internal directory structures and application state to the user.
 **Prevention:** All external API calls, even during Streamlit UI initialization or within sidebars, must be wrapped in `try...except` blocks. Use graceful error handling (e.g., `st.error` and `st.stop()`) to halt UI rendering securely rather than crashing. Additionally, wrap these initializers in `@st.cache_data` to prevent repetitive failing calls on UI reruns.
+
+## 2026-06-15 - Unbounded Persistent Storage of Temporary Vector Stores (DoS)
+**Vulnerability:** The application was persistently saving temporary, query-specific vector store objects (FAISS indices and chunks) to disk inside `PDFHelper.ask` using unique directory names (`uuid.uuid4()`), without any reliable cleanup mechanism.
+**Learning:** This leads to unbounded disk usage, as every query creates a new directory. Over time, or under heavy usage/abuse, this will fill up the storage disk, resulting in a Denial of Service (DoS) due to resource exhaustion.
+**Prevention:** Avoid persistent disk saves for temporary, ephemeral, or query-specific data structures. Use in-memory objects (e.g., passing `storing_path=None` to initializers) for interactions that do not require long-term persistence.
