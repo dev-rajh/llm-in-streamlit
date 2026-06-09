@@ -131,7 +131,8 @@ def create_embeddings(chunks, embedding_model, storing_path="vectorstore"):
     index.add(np.array(embeddings).astype('float32'))
 
     vectorstore = SimpleVectorStore(index, chunks, embedding_model)
-    vectorstore.save_local(storing_path)
+    if storing_path:
+        vectorstore.save_local(storing_path)
     return vectorstore
 
 def get_response(query, retriever, model, base_url, template):
@@ -174,10 +175,6 @@ class PDFHelper:
         self._embedding_model_name = embedding_model_name
 
     def ask(self, uploaded_file, question):
-        vector_store_directory = os.path.join(str(Path.home()), 'pdf-store', 'vectorstore',
-                                              'pdf-doc-helper-store', str(uuid.uuid4()))
-        os.makedirs(vector_store_directory, exist_ok=True)
-
         embed = load_embedding_model(model_name=self._embedding_model_name)
         
         temp_file_path = None
@@ -211,7 +208,8 @@ class PDFHelper:
         if not documents:
             return "Unable to extract meaningful content from the PDF. The file might be empty, corrupted, or contain only images."
 
-        vectorstore = create_embeddings(chunks=documents, embedding_model=embed, storing_path=vector_store_directory)
+        # 🛡️ Sentinel: Pass storing_path=None to avoid unbounded disk usage (DoS risk) from temporary vector stores
+        vectorstore = create_embeddings(chunks=documents, embedding_model=embed, storing_path=None)
         
         if vectorstore is None:
             return "Unable to process the PDF content. The file might be empty or contain no extractable text."
