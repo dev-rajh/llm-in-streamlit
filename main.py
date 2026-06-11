@@ -43,6 +43,10 @@ def load_chats():
 
 
 def split_text_into_chunks(text, chunk_size, chunk_overlap):
+    # 🛡️ Sentinel: Prevent infinite loop / DoS if chunk_size <= chunk_overlap
+    if chunk_size <= chunk_overlap:
+        raise ValueError("chunk_size must be strictly greater than chunk_overlap to prevent infinite loops.")
+
     chunks = []
     start = 0
     while start < len(text):

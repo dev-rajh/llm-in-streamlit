@@ -12,7 +12,20 @@ sys.modules['sentence_transformers'] = MagicMock()
 sys.modules['faiss'] = MagicMock()
 sys.modules['numpy'] = MagicMock()
 
-from main import get_response, create_embeddings, Document
+from main import get_response, create_embeddings, Document, split_text_into_chunks
+
+def test_split_text_into_chunks_dos():
+    # 🛡️ Sentinel: Test that an invalid chunk overlap raises ValueError
+    # to prevent infinite loop / resource exhaustion DoS
+    with pytest.raises(ValueError, match="chunk_size must be strictly greater than chunk_overlap to prevent infinite loops."):
+        split_text_into_chunks("hello world "*100, 100, 100)
+
+    with pytest.raises(ValueError):
+        split_text_into_chunks("hello world "*100, 50, 100)
+
+def test_split_text_into_chunks_valid():
+    chunks = split_text_into_chunks("hello world", 10, 5)
+    assert len(chunks) > 0
 
 def test_get_response_basic():
     # Mock retriever

@@ -22,3 +22,8 @@
 **Vulnerability:** The application was persistently saving temporary, query-specific vector store objects (FAISS indices and chunks) to disk inside `PDFHelper.ask` using unique directory names (`uuid.uuid4()`), without any reliable cleanup mechanism.
 **Learning:** This leads to unbounded disk usage, as every query creates a new directory. Over time, or under heavy usage/abuse, this will fill up the storage disk, resulting in a Denial of Service (DoS) due to resource exhaustion.
 **Prevention:** Avoid persistent disk saves for temporary, ephemeral, or query-specific data structures. Use in-memory objects (e.g., passing `storing_path=None` to initializers) for interactions that do not require long-term persistence.
+
+## 2026-06-25 - Infinite Loop in Text Splitting (DoS)
+**Vulnerability:** The application was not validating input parameters `chunk_size` and `chunk_overlap` in `split_text_into_chunks()`.
+**Learning:** If an attacker or user configures `chunk_overlap >= chunk_size`, the indexing loop (`start += chunk_size - chunk_overlap`) will never advance or will step backward, resulting in an infinite loop that crashes the process and exhausts CPU/Memory resources (Denial of Service).
+**Prevention:** Always validate size parameters on chunking functions. Ensure `chunk_size > chunk_overlap` before starting any loops.
