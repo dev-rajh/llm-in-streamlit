@@ -105,3 +105,48 @@ def test_create_embeddings_with_chunks():
     assert result.index == mock_index
     assert result.chunks == chunks
     assert result.embedding_model == embedding_model
+
+from unittest.mock import patch, mock_open
+import json
+
+def test_load_chats_corrupted_json():
+    from main import load_chats
+
+    # 🛡️ Sentinel: Test that corrupted JSON in chats.json is handled gracefully and returns empty dict
+    with patch('os.path.exists', return_value=True):
+        with patch('builtins.open', mock_open(read_data="{invalid json")):
+            result = load_chats()
+            assert result == {}
+
+def test_save_chats_offload():
+    from main import save_chats
+    import main
+
+    class MockSessionState(dict):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+        def __getattr__(self, key):
+            if key in self:
+                return self[key]
+            raise AttributeError(key)
+
+    original_session_state = main.st.session_state
+    main.st.session_state = MockSessionState({"chats": {"test": "data"}})
+
+    try:
+        with patch('main.get_chat_executor') as mock_executor,              patch('main.copy.deepcopy') as mock_deepcopy:
+
+            mock_executor_instance = MagicMock()
+            mock_executor.return_value = mock_executor_instance
+            mock_deepcopy.return_value = {"test": "data_copy"}
+
+            save_chats()
+
+            # 🛡️ Sentinel: Verify deepcopy is called for thread safety
+            mock_deepcopy.assert_called_once_with({"test": "data"})
+
+            # 🛡️ Sentinel: Verify background thread submission
+            from main import _save_chats_task
+            mock_executor_instance.submit.assert_called_once_with(_save_chats_task, {"test": "data_copy"})
+    finally:
+        main.st.session_state = original_session_state

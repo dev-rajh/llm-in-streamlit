@@ -14,6 +14,8 @@ import torch
 from pathlib import Path
 import uuid
 import requests
+import copy
+from concurrent.futures import ThreadPoolExecutor
 
 
 # Configuration
@@ -29,16 +31,36 @@ class Config:
     OLLAMA_API_BASE_URL = "http://localhost:11434"
     HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE = "cpu"
 
+@st.cache_resource
+def get_chat_executor():
+    """🛡️ Sentinel: Provide a background thread executor for file I/O to prevent blocking the UI thread (DoS prevention)."""
+    return ThreadPoolExecutor(max_workers=1)
+
+def _save_chats_task(chats_data):
+    """🛡️ Sentinel: Helper function for background saving, safely handling file I/O."""
+    try:
+        with open("chats.json", "w") as f:
+            json.dump(chats_data, f)
+    except Exception as e:
+        print(f"Error saving chats to JSON file: {e}")
+
 # Function to save chats to a JSON file
 def save_chats():
-    with open("chats.json", "w") as f:
-        json.dump(st.session_state.chats, f)
+    """🛡️ Sentinel: Offloads file I/O to a background thread to prevent UI blocking (localized DoS)."""
+    if "chats" in st.session_state:
+        # Deepcopy ensures thread safety since Streamlit might update st.session_state concurrently
+        chats_copy = copy.deepcopy(st.session_state.chats)
+        get_chat_executor().submit(_save_chats_task, chats_copy)
 
 # Function to load chats from a JSON file
 def load_chats():
     if os.path.exists("chats.json"):
-        with open("chats.json", "r") as f:
-            return json.load(f)
+        try:
+            with open("chats.json", "r") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading chats from JSON file: {e}")
+            return {}
     return {}
 
 
