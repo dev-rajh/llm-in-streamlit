@@ -27,3 +27,8 @@
 **Vulnerability:** The application was not validating input parameters `chunk_size` and `chunk_overlap` in `split_text_into_chunks()`.
 **Learning:** If an attacker or user configures `chunk_overlap >= chunk_size`, the indexing loop (`start += chunk_size - chunk_overlap`) will never advance or will step backward, resulting in an infinite loop that crashes the process and exhausts CPU/Memory resources (Denial of Service).
 **Prevention:** Always validate size parameters on chunking functions. Ensure `chunk_size > chunk_overlap` before starting any loops.
+
+## 2026-06-25 - Synchronous File I/O UI Blocking (Localized DoS)
+**Vulnerability:** The application was synchronously writing and reading the `chats.json` state file on the main thread during Streamlit user interactions.
+**Learning:** In a Streamlit environment, any blocking synchronous operation (like heavy file I/O on large JSON objects) will stall the main execution thread. If `chats.json` grows large, or the disk is slow, saving on every message will cause severe UI freezing, resulting in a localized Denial of Service (DoS) for the user. Additionally, unhandled exceptions during file reading/writing can lead to application crashes.
+**Prevention:** Always offload non-critical file I/O operations (like saving state) to a background thread using `concurrent.futures.ThreadPoolExecutor`. Ensure thread safety by deep copying state objects (like `st.session_state`) before passing them to the background worker. Wrap file loading operations in `try...except` blocks to handle malformed or locked files gracefully without crashing the UI.
