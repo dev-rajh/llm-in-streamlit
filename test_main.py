@@ -12,7 +12,19 @@ sys.modules['sentence_transformers'] = MagicMock()
 sys.modules['faiss'] = MagicMock()
 sys.modules['numpy'] = MagicMock()
 
-from main import get_response, create_embeddings, Document, split_text_into_chunks
+from main import get_response, create_embeddings, Document, split_text_into_chunks, load_chats
+from unittest.mock import patch
+
+def test_load_chats_error_handling():
+    # 🛡️ Sentinel: Test that a corrupted chats.json does not crash the application
+    with patch('os.path.exists', return_value=True), \
+         patch('builtins.open') as mock_open:
+        mock_open.side_effect = Exception("Mock corrupted file")
+
+        result = load_chats()
+
+        # Should catch exception and return an empty dict
+        assert result == {}
 
 def test_split_text_into_chunks_dos():
     # 🛡️ Sentinel: Test that an invalid chunk overlap raises ValueError

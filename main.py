@@ -52,8 +52,12 @@ def save_chats():
 # Function to load chats from a JSON file
 def load_chats():
     if os.path.exists("chats.json"):
-        with open("chats.json", "r") as f:
-            return json.load(f)
+        try:
+            with open("chats.json", "r") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading chats: {e}")
+            return {}
     return {}
 
 
@@ -134,7 +138,12 @@ def create_context(chunks):
 @st.cache_resource
 def load_embedding_model(model_name, normalize_embedding=True):
     print("Loading embedding model...")
-    return SentenceTransformer(model_name, device=Config.HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE)
+    try:
+        return SentenceTransformer(model_name, device=Config.HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE)
+    except Exception as e:
+        print(f"Error loading embedding model: {e}")
+        st.error("An error occurred while loading the embedding model. Please try again later.")
+        st.stop()
 
 def create_embeddings(chunks, embedding_model, storing_path="vectorstore"):
     print("Creating embeddings...")
