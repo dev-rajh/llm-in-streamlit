@@ -52,8 +52,13 @@ def save_chats():
 # Function to load chats from a JSON file
 def load_chats():
     if os.path.exists("chats.json"):
-        with open("chats.json", "r") as f:
-            return json.load(f)
+        try:
+            with open("chats.json", "r") as f:
+                return json.load(f)
+        except Exception as e:
+            # 🛡️ Sentinel: Handle exception gracefully to prevent Information Disclosure and persistent DoS if chats.json is corrupted
+            print(f"Error loading chats: {e}")
+            return {}
     return {}
 
 
