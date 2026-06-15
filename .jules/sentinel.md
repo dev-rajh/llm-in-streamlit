@@ -27,3 +27,8 @@
 **Vulnerability:** The application was not validating input parameters `chunk_size` and `chunk_overlap` in `split_text_into_chunks()`.
 **Learning:** If an attacker or user configures `chunk_overlap >= chunk_size`, the indexing loop (`start += chunk_size - chunk_overlap`) will never advance or will step backward, resulting in an infinite loop that crashes the process and exhausts CPU/Memory resources (Denial of Service).
 **Prevention:** Always validate size parameters on chunking functions. Ensure `chunk_size > chunk_overlap` before starting any loops.
+
+## 2026-06-28 - Local State File Corruption (Information Disclosure / Persistent DoS)
+**Vulnerability:** The application was not using `try...except` when reading and parsing the local state file (`chats.json`) during initialization (`load_chats()`).
+**Learning:** If the `chats.json` file is corrupted, malformed, or has incorrect permissions, an unhandled exception will crash the Streamlit application upon initialization. Because this initialization happens on page load, it creates a persistent Denial of Service (DoS) where the app is completely unusable. Furthermore, it leaks raw stack traces (Information Disclosure) showing internal filesystem paths.
+**Prevention:** Always wrap reading/parsing of user or local state files in `try...except` blocks during initialization. Handle errors gracefully by logging the issue and reverting to a safe default state (e.g., an empty dictionary `{}`) to prevent total application failure.

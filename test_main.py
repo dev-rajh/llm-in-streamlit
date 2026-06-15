@@ -1,6 +1,6 @@
 import pytest
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Mock required dependencies
 sys.modules['streamlit'] = MagicMock()
@@ -12,7 +12,7 @@ sys.modules['sentence_transformers'] = MagicMock()
 sys.modules['faiss'] = MagicMock()
 sys.modules['numpy'] = MagicMock()
 
-from main import get_response, create_embeddings, Document, split_text_into_chunks
+from main import get_response, create_embeddings, Document, split_text_into_chunks, load_chats
 
 def test_split_text_into_chunks_dos():
     # 🛡️ Sentinel: Test that an invalid chunk overlap raises ValueError
@@ -105,3 +105,14 @@ def test_create_embeddings_with_chunks():
     assert result.index == mock_index
     assert result.chunks == chunks
     assert result.embedding_model == embedding_model
+
+def test_load_chats_corrupted_file():
+    # 🛡️ Sentinel: Test error handling for corrupted file to prevent stack trace leaks
+    with patch('os.path.exists') as mock_exists, patch('builtins.open') as mock_open:
+        mock_exists.return_value = True
+        mock_open.side_effect = Exception("Corrupted file error")
+
+        result = load_chats()
+
+        assert result == {}
+        mock_open.assert_called_once_with("chats.json", "r")
