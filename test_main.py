@@ -3,7 +3,20 @@ import sys
 from unittest.mock import MagicMock, patch
 
 # Mock required dependencies
-sys.modules['streamlit'] = MagicMock()
+mock_st = MagicMock()
+
+# 🛡️ Sentinel: Mock Streamlit caching decorators to allow function execution in tests
+def mock_cache_decorator(*args, **kwargs):
+    if len(args) == 1 and callable(args[0]):
+        return args[0]
+    def wrapper(func):
+        return func
+    return wrapper
+
+mock_st.cache_resource = mock_cache_decorator
+mock_st.cache_data = mock_cache_decorator
+sys.modules['streamlit'] = mock_st
+
 sys.modules['ollama'] = MagicMock()
 sys.modules['torch'] = MagicMock()
 sys.modules['requests'] = MagicMock()
@@ -12,7 +25,20 @@ sys.modules['sentence_transformers'] = MagicMock()
 sys.modules['faiss'] = MagicMock()
 sys.modules['numpy'] = MagicMock()
 
-from main import get_response, create_embeddings, Document, split_text_into_chunks, load_chats
+from main import get_response, create_embeddings, Document, split_text_into_chunks, load_chats, load_embedding_model
+import main
+
+def test_load_embedding_model_crash():
+    # 🛡️ Sentinel: Verify exception handling to prevent stack trace leaks
+    with patch('main.SentenceTransformer') as mock_st_class:
+        mock_st_class.side_effect = Exception("Hugging Face API Down")
+
+        with patch('main.st.error') as mock_st_error, patch('main.st.stop') as mock_st_stop:
+            result = load_embedding_model("some-model")
+
+            mock_st_error.assert_called_once()
+            mock_st_stop.assert_called_once()
+            assert result is None
 
 def test_split_text_into_chunks_dos():
     # 🛡️ Sentinel: Test that an invalid chunk overlap raises ValueError
