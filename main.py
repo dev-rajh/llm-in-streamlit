@@ -139,7 +139,14 @@ def create_context(chunks):
 @st.cache_resource
 def load_embedding_model(model_name, normalize_embedding=True):
     print("Loading embedding model...")
-    return SentenceTransformer(model_name, device=Config.HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE)
+    try:
+        # 🛡️ Sentinel: Wrap model loading in try-except to handle network/API issues and avoid stack trace leakage (Information Disclosure/DoS)
+        return SentenceTransformer(model_name, device=Config.HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE)
+    except Exception as e:
+        print(f"Error loading embedding model: {e}")
+        st.error("An error occurred while loading the embedding model. The model service might be unavailable.")
+        st.stop()
+        return None
 
 def create_embeddings(chunks, embedding_model, storing_path="vectorstore"):
     print("Creating embeddings...")
