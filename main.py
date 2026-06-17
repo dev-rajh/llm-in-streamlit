@@ -9,6 +9,7 @@ import os
 import json
 from datetime import datetime
 import hashlib
+import string
 import tempfile
 import torch
 from pathlib import Path
@@ -170,8 +171,8 @@ def get_response(query, retriever, model, base_url, template):
     relevant_docs = retriever.get_relevant_documents(query)
     context = "\n\n".join([doc.page_content for doc in relevant_docs])
 
-    # 🛡️ Sentinel: Use simple string replacements to prevent unhandled KeyError/ValueError exceptions from user-controlled input containing unescaped curly braces in template.format()
-    prompt = template.replace("{context}", context).replace("{question}", query)
+    # 🛡️ Sentinel: Use safe string substitution to prevent Context Poisoning / Prompt Injection (via sequential replace) and application crashes (via unescaped braces in .format)
+    prompt = string.Template(template).safe_substitute(context=context, question=query)
 
     client = ollama.Client(host=base_url)
 
@@ -255,10 +256,10 @@ class PDFHelper:
         If you don't know the answer, just say you don't know. Don't try to make up an answer.
     
         ### Context:
-        {context}
+        $context
     
         ### User:
-        {question}
+        $question
     
         ### Response:
         """
