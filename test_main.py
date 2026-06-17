@@ -68,7 +68,7 @@ def test_get_response_basic():
         {'message': {'content': 'result  '}}
     ]
 
-    template = "Context: {context}\\nQuestion: {question}"
+    template = "Context: $context\\nQuestion: $question"
     result = get_response("test query", mock_retriever, "test-model", "http://test", template)
 
     assert result == "test result"
@@ -89,7 +89,7 @@ def test_get_response_empty_result():
     sys.modules['ollama'].Client.return_value = mock_client_instance
     mock_client_instance.chat.return_value = [{'message': {'content': '   '}}]
 
-    template = "{context} {question}"
+    template = "$context $question"
     result = get_response("test query", mock_retriever, "test-model", "http://test", template)
     assert result == ""
 
