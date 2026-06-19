@@ -42,3 +42,8 @@
 **Vulnerability:** Sequential string replacements (`template.replace("{context}", context).replace("{question}", query)`) allow Context Poisoning/Prompt Injection vulnerabilities. If `{question}` is present in the `context`, it will be replaced by the query in the subsequent replacement step, allowing an attacker to manipulate the context to override instructions or leak data.
 **Learning:** Sequential `.replace()` operations on LLM prompts process strings step-by-step, making earlier inputs vulnerable to accidental substitution by later variables. Using `.format()` is also unsafe as user input might contain unescaped curly braces, causing Key/ValueErrors.
 **Prevention:** Always use `string.Template(template).safe_substitute(context=context, question=query)` to construct prompts with variables, which safely interpolates all variables simultaneously without sequential risk or formatting crashes.
+
+## 2026-07-01 - Input Length Limits and Resource Exhaustion (DoS)
+**Vulnerability:** The application was not enforcing a length limit on user input via `st.chat_input` and was missing a timeout parameter when initializing the `ollama.Client`.
+**Learning:** Allowing unbounded input length can be used by an attacker to cause memory exhaustion or context-window abuse, potentially leading to a Denial of Service (DoS). Similarly, calling external network services (like an LLM API) without explicit timeouts can lead to indefinite blocking if the service becomes unresponsive, which exhausts application threads and results in a DoS.
+**Prevention:** Always set reasonable limits on user input fields (e.g., using `max_chars=2000` in `st.chat_input`) and ensure all external API clients or HTTP requests are configured with an explicit timeout.
