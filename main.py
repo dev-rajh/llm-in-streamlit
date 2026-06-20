@@ -174,7 +174,7 @@ def get_response(query, retriever, model, base_url, template):
     # 🛡️ Sentinel: Use string.Template for safe substitution to prevent Context Poisoning/Prompt Injection vulnerabilities present in sequential string replacements, and to avoid KeyError/ValueError from user-controlled input containing unescaped curly braces in template.format().
     prompt = string.Template(template).safe_substitute(context=context, question=query)
 
-    client = ollama.Client(host=base_url)
+    client = ollama.Client(host=base_url, timeout=30)
 
     response = ""
     try:
@@ -189,7 +189,7 @@ def get_response(query, retriever, model, base_url, template):
     return response.strip()
 
 def chat_without_pdf(prompt, selected_model):
-    client = ollama.Client(host=Config.OLLAMA_API_BASE_URL)
+    client = ollama.Client(host=Config.OLLAMA_API_BASE_URL, timeout=30)
     response = ""
     try:
         # 🛡️ Sentinel: Handle external API errors to prevent stack trace leakage
@@ -373,7 +373,7 @@ def main():
             st.markdown(message["content"])
 
     # Chat input and response handling
-    if prompt := st.chat_input("What is your question?"):
+    if prompt := st.chat_input("What is your question?", max_chars=4000):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.session_state.messages.append({"role": "user", "content": prompt, "timestamp": timestamp})
         
