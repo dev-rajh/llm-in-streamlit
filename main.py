@@ -31,6 +31,7 @@ class Config:
     EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
     OLLAMA_API_BASE_URL = "http://localhost:11434"
     HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE = "cpu"
+    OLLAMA_API_TIMEOUT = 30  # 🛡️ Sentinel: Default timeout for Ollama API calls to prevent indefinite blocking
 
 @st.cache_resource
 def get_io_executor():
@@ -174,7 +175,7 @@ def get_response(query, retriever, model, base_url, template):
     # 🛡️ Sentinel: Use string.Template for safe substitution to prevent Context Poisoning/Prompt Injection vulnerabilities present in sequential string replacements, and to avoid KeyError/ValueError from user-controlled input containing unescaped curly braces in template.format().
     prompt = string.Template(template).safe_substitute(context=context, question=query)
 
-    client = ollama.Client(host=base_url)
+    client = ollama.Client(host=base_url, timeout=Config.OLLAMA_API_TIMEOUT)
 
     response = ""
     try:
@@ -189,7 +190,7 @@ def get_response(query, retriever, model, base_url, template):
     return response.strip()
 
 def chat_without_pdf(prompt, selected_model):
-    client = ollama.Client(host=Config.OLLAMA_API_BASE_URL)
+    client = ollama.Client(host=Config.OLLAMA_API_BASE_URL, timeout=Config.OLLAMA_API_TIMEOUT)
     response = ""
     try:
         # 🛡️ Sentinel: Handle external API errors to prevent stack trace leakage
@@ -287,7 +288,8 @@ def pull_model(model_name):
 def get_available_models():
     """🛡️ Sentinel: Wrap external API call to prevent unhandled exceptions and stack trace leaks."""
     try:
-        return ollama.list().get('models', [])
+        client = ollama.Client(host=Config.OLLAMA_API_BASE_URL, timeout=Config.OLLAMA_API_TIMEOUT)
+        return client.list().get('models', [])
     except Exception as e:
         print(f"Error fetching Ollama models: {e}")
         return []
