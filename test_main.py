@@ -73,7 +73,7 @@ def test_get_response_basic():
 
     assert result == "test result"
     mock_retriever.get_relevant_documents.assert_called_once_with("test query")
-    sys.modules['ollama'].Client.assert_called_once_with(host="http://test")
+    sys.modules['ollama'].Client.assert_called_once_with(host="http://test", timeout=120.0)
     mock_client_instance.chat.assert_called_once()
 
     args, kwargs = mock_client_instance.chat.call_args
