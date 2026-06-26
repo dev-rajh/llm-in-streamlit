@@ -31,6 +31,7 @@ class Config:
     EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
     OLLAMA_API_BASE_URL = "http://localhost:11434"
     HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE = "cpu"
+    MAX_TEXT_LENGTH = 50000000
 
 @st.cache_resource
 def get_io_executor():
@@ -90,6 +91,9 @@ def process_pdf(file, chunk_size, chunk_overlap):
         for page in reader.pages:
             extracted_text = page.extract_text()
             if extracted_text:
+                # 🛡️ Sentinel: Enforce max text length to prevent DoS (memory/CPU exhaustion)
+                if len(text) + len(extracted_text) > Config.MAX_TEXT_LENGTH:
+                    raise ValueError("PDF text extraction limit exceeded to prevent DoS.")
                 text += extracted_text + "\n"
 
         chunks = split_text_into_chunks(text, chunk_size, chunk_overlap)
@@ -224,6 +228,9 @@ class PDFHelper:
             for page in reader.pages:
                 extracted_text = page.extract_text()
                 if extracted_text:
+                    # 🛡️ Sentinel: Enforce max text length to prevent DoS (memory/CPU exhaustion)
+                    if len(text) + len(extracted_text) > Config.MAX_TEXT_LENGTH:
+                        return "The PDF is too large to process safely. Please upload a smaller document."
                     text += extracted_text + "\n"
         except Exception as e:
             print(f"Error extracting text from PDF in PDFHelper.ask: {e}")
