@@ -142,3 +142,23 @@ def test_load_chats_corrupted_file():
 
         assert result == {}
         mock_open.assert_called_once_with("chats.json", "r")
+
+def test_process_pdf_dos_protection():
+    # 🛡️ Sentinel: Test that DoS protection is triggered when PDF is too large
+    from main import process_pdf, Config
+
+    mock_file = MagicMock()
+    mock_file.getbuffer.return_value = b"dummy"
+    mock_file.name = "test.pdf"
+
+    with patch('main.pypdf.PdfReader') as mock_reader_class, patch('main.st.error') as mock_st_error, patch('main.st.stop') as mock_st_stop:
+        mock_instance = MagicMock()
+        mock_page = MagicMock()
+        mock_page.extract_text.return_value = "A" * (Config.MAX_TEXT_LENGTH + 1)
+        mock_instance.pages = [mock_page]
+        mock_reader_class.return_value = mock_instance
+
+        process_pdf(mock_file, 500, 50)
+
+        mock_st_error.assert_called_once_with("An error occurred while processing the PDF file. Please ensure it is a valid PDF and try again.")
+        mock_st_stop.assert_called_once()
