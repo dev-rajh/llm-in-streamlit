@@ -103,6 +103,30 @@ def test_create_embeddings_none_chunks():
     result = create_embeddings(None, embedding_model)
     assert result is None
 
+def test_create_embeddings_crash():
+    # 🛡️ Sentinel: Test error handling for embedding model failure to prevent stack trace leaks
+    chunks = [Document('chunk1')]
+    embedding_model = MagicMock()
+    embedding_model.encode.side_effect = Exception("Embedding Model Down")
+
+    result = create_embeddings(chunks, embedding_model, storing_path="custom_path")
+    assert result is None
+
+def test_get_relevant_documents_crash():
+    # 🛡️ Sentinel: Test error handling in retriever to prevent stack trace leaks
+    chunks = [Document('chunk1')]
+    embedding_model = MagicMock()
+    embedding_model.encode.side_effect = Exception("Embedding Model Down")
+
+    mock_index = MagicMock()
+
+    from main import SimpleVectorStore
+    store = SimpleVectorStore(mock_index, chunks, embedding_model)
+    retriever = store.as_retriever()
+
+    result = retriever.get_relevant_documents("query")
+    assert result == []
+
 def test_create_embeddings_with_chunks():
     chunks = [Document('chunk1'), Document('chunk2')]
     embedding_model = MagicMock()

@@ -143,14 +143,19 @@ class SimpleVectorStore:
                 self.k = k
 
             def get_relevant_documents(self, query):
-                query_embedding = self.store.embedding_model.encode([query])
-                distances, indices = self.store.index.search(np.array(query_embedding).astype('float32'), self.k)
+                try:
+                    # 🛡️ Sentinel: Handle exception to prevent stack trace leakage and crash on embedding model failure
+                    query_embedding = self.store.embedding_model.encode([query])
+                    distances, indices = self.store.index.search(np.array(query_embedding).astype('float32'), self.k)
 
-                results = []
-                for i in indices[0]:
-                    if i != -1 and i < len(self.store.chunks):
-                        results.append(self.store.chunks[i])
-                return results
+                    results = []
+                    for i in indices[0]:
+                        if i != -1 and i < len(self.store.chunks):
+                            results.append(self.store.chunks[i])
+                    return results
+                except Exception as e:
+                    print(f"Error getting relevant documents: {e}")
+                    return []
 
         return Retriever(self, k)
 
@@ -182,16 +187,21 @@ def create_embeddings(chunks, embedding_model, storing_path="vectorstore"):
         return None
 
     texts = [chunk.page_content for chunk in chunks]
-    embeddings = embedding_model.encode(texts)
+    try:
+        # 🛡️ Sentinel: Handle exception to prevent stack trace leakage and crash on embedding model failure
+        embeddings = embedding_model.encode(texts)
 
-    dimension = embeddings.shape[1]
-    index = faiss.IndexFlatL2(dimension)
-    index.add(np.array(embeddings).astype('float32'))
+        dimension = embeddings.shape[1]
+        index = faiss.IndexFlatL2(dimension)
+        index.add(np.array(embeddings).astype('float32'))
 
-    vectorstore = SimpleVectorStore(index, chunks, embedding_model)
-    if storing_path:
-        vectorstore.save_local(storing_path)
-    return vectorstore
+        vectorstore = SimpleVectorStore(index, chunks, embedding_model)
+        if storing_path:
+            vectorstore.save_local(storing_path)
+        return vectorstore
+    except Exception as e:
+        print(f"Error creating embeddings: {e}")
+        return None
 
 def get_response(query, retriever, model, base_url, template):
     relevant_docs = retriever.get_relevant_documents(query)
