@@ -17,7 +17,8 @@ import uuid
 import requests
 import concurrent.futures
 import copy
-
+import subprocess
+import shutil
 
 # Configuration
 
@@ -78,23 +79,42 @@ def split_text_into_chunks(text, chunk_size, chunk_overlap):
         start += chunk_size - chunk_overlap
     return chunks
 
-def process_pdf(file, chunk_size, chunk_overlap):
+def process_pdf(file, chunk_size, chunk_overlap, parser="pypdf (Default)"):
     filename = None
+    temp_dir = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
             # 🛡️ Sentinel: Assign filename before writing to ensure cleanup if disk is full
             filename = temp_file.name
             temp_file.write(file.getbuffer())
 
-        reader = pypdf.PdfReader(filename)
         text = ""
-        for page in reader.pages:
-            extracted_text = page.extract_text()
-            if extracted_text:
-                text += extracted_text + "\n"
-                # 🛡️ Sentinel: Prevent CPU and Memory DoS by enforcing a maximum text length
-                if len(text) > Config.MAX_TEXT_LENGTH:
-                    raise ValueError(f"PDF text extraction exceeds maximum limit of {Config.MAX_TEXT_LENGTH} characters.")
+        if parser == "Nutrient pdf-to-markdown":
+            temp_dir = tempfile.mkdtemp()
+            out_md_path = os.path.join(temp_dir, "output.md")
+            try:
+                # Use subprocess to run the pdf-to-markdown CLI
+                subprocess.run(
+                    ["npx", "--yes", "@pspdfkit/pdf-to-markdown", "pdf-to-markdown", "--enable-image-export", filename, out_md_path],
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                if os.path.exists(out_md_path):
+                    with open(out_md_path, "r", encoding="utf-8") as f:
+                        text = f.read()
+                else:
+                    raise FileNotFoundError("Markdown output file was not generated.")
+            except Exception as cli_error:
+                print(f"pdf-to-markdown failed, falling back to pypdf: {cli_error}")
+                parser = "pypdf (Default)"
+
+        if parser == "pypdf (Default)":
+            reader = pypdf.PdfReader(filename)
+            for page in reader.pages:
+                extracted_text = page.extract_text()
+                if extracted_text:
+                    text += extracted_text + "\n"
 
         chunks = split_text_into_chunks(text, chunk_size, chunk_overlap)
 
@@ -106,6 +126,8 @@ def process_pdf(file, chunk_size, chunk_overlap):
     finally:
         if filename is not None and os.path.exists(filename):
             os.remove(filename)
+        if temp_dir is not None and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 class SimpleVectorStore:
@@ -211,10 +233,11 @@ class PDFHelper:
         self._model_name = model_name
         self._embedding_model_name = embedding_model_name
 
-    def ask(self, uploaded_file, question):
+    def ask(self, uploaded_file, question, parser="pypdf (Default)"):
         embed = load_embedding_model(model_name=self._embedding_model_name)
         
         temp_file_path = None
+        temp_dir = None
         text = ""
         try:
             # Create a temporary file to save the uploaded file content
@@ -223,15 +246,32 @@ class PDFHelper:
                 temp_file_path = temp_file.name
                 temp_file.write(uploaded_file.getvalue())
 
-            # Use pypdf to load text
-            reader = pypdf.PdfReader(temp_file_path)
-            for page in reader.pages:
-                extracted_text = page.extract_text()
-                if extracted_text:
-                    text += extracted_text + "\n"
-                    # 🛡️ Sentinel: Prevent CPU and Memory DoS by enforcing a maximum text length
-                    if len(text) > Config.MAX_TEXT_LENGTH:
-                        raise ValueError(f"PDF text extraction exceeds maximum limit of {Config.MAX_TEXT_LENGTH} characters.")
+            if parser == "Nutrient pdf-to-markdown":
+                temp_dir = tempfile.mkdtemp()
+                out_md_path = os.path.join(temp_dir, "output.md")
+                try:
+                    subprocess.run(
+                        ["npx", "--yes", "@pspdfkit/pdf-to-markdown", "pdf-to-markdown", "--enable-image-export", temp_file_path, out_md_path],
+                        check=True,
+                        capture_output=True,
+                        text=True
+                    )
+                    if os.path.exists(out_md_path):
+                        with open(out_md_path, "r", encoding="utf-8") as f:
+                            text = f.read()
+                    else:
+                        raise FileNotFoundError("Markdown output file was not generated.")
+                except Exception as cli_error:
+                    print(f"pdf-to-markdown failed in PDFHelper.ask, falling back to pypdf: {cli_error}")
+                    parser = "pypdf (Default)"
+
+            if parser == "pypdf (Default)":
+                # Use pypdf to load text
+                reader = pypdf.PdfReader(temp_file_path)
+                for page in reader.pages:
+                    extracted_text = page.extract_text()
+                    if extracted_text:
+                        text += extracted_text + "\n"
         except Exception as e:
             print(f"Error extracting text from PDF in PDFHelper.ask: {e}")
             return "An error occurred while reading the PDF file. It might be malformed or corrupted."
@@ -239,6 +279,8 @@ class PDFHelper:
             # 🛡️ Sentinel: Ensure the temporary file is cleaned up even if reading/writing fails
             if temp_file_path is not None and os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
+            if temp_dir is not None and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
         
         if not text.strip():
             return "The uploaded PDF appears to be empty or unreadable. Please check the file and try again."
@@ -328,11 +370,13 @@ def main():
 
         if uploaded_file is not None:
             st.write("PDF mode: Ask questions about the uploaded document.")
+            parser = st.selectbox("Select PDF Parser", ["pypdf (Default)", "Nutrient pdf-to-markdown"])
             chunk_size = st.slider("Chunk Size", min_value=100, max_value=1000, value=500, step=50)
             chunk_overlap = st.slider("Chunk Overlap", min_value=0, max_value=100, value=50, step=10)
 
-            if st.session_state.current_file != uploaded_file.name:
-                chunks, filename = process_pdf(uploaded_file, chunk_size, chunk_overlap)
+            if st.session_state.current_file != uploaded_file.name or st.session_state.get('current_parser') != parser:
+                st.session_state.current_parser = parser
+                chunks, filename = process_pdf(uploaded_file, chunk_size, chunk_overlap, parser)
                 context = create_context(chunks)
                 st.session_state.context = context
                 st.session_state.current_file = filename
@@ -401,7 +445,8 @@ def main():
                 )
                 full_response = pdf_helper.ask(
                     uploaded_file=uploaded_file,
-                    question=prompt
+                    question=prompt,
+                    parser=st.session_state.current_parser
                 )
             
             message_placeholder.markdown(full_response)
