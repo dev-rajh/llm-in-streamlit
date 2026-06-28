@@ -108,9 +108,10 @@ def test_create_embeddings_with_chunks():
     embedding_model = MagicMock()
 
     # Mock encode to return dummy embeddings
-    import numpy as np
     dummy_embeddings = MagicMock()
     dummy_embeddings.shape = (2, 768)
+    sys.modules['numpy'].array.return_value = dummy_embeddings
+    sys.modules['numpy'].array.return_value.astype.return_value = dummy_embeddings
     embedding_model.encode.return_value = dummy_embeddings
 
     # Mock faiss.IndexFlatL2
