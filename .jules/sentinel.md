@@ -47,3 +47,8 @@
 **Vulnerability:** The application was missing network timeouts for `ollama.Client` calls and lacked an input length limit on the frontend `st.chat_input` component.
 **Learning:** External or local LLM inference APIs (like Ollama) can become unresponsive or hang indefinitely. Without explicitly configured timeouts, API clients will block the main application thread forever, causing a Denial of Service (DoS) for the user. Additionally, allowing unbounded user input in a chat interface can allow an attacker to send excessively large prompts, exhausting memory (VRAM/RAM) and CPU resources on the server or the LLM backend.
 **Prevention:** Always configure explicit timeouts (e.g., `timeout=120.0`) on all external or internal network clients (e.g., `ollama.Client`). Also, enforce strict bounding on user input sizes (e.g., `max_chars=4000` on `st.chat_input`) to prevent resource exhaustion attacks.
+
+## 2026-06-25 - Prevent DoS from Large PDF Text Extraction
+**Vulnerability:** The application was extracting text from uploaded PDFs without any upper bound length checks in `process_pdf` and `PDFHelper.ask`.
+**Learning:** Malicious or exceptionally large PDF files (e.g., zip bombs or highly compressed text) could be uploaded to exhaust CPU and Memory resources (Denial of Service) during the extraction process with `pypdf`, leading to application crashes or degraded performance for all users.
+**Prevention:** To prevent CPU and Memory DoS from excessively large PDFs, enforce a maximum text extraction limit (`Config.MAX_TEXT_LENGTH`). A reasonable limit (e.g., 50,000,000 characters) effectively mitigates malicious files without falsely rejecting legitimate large documents like books or reports.

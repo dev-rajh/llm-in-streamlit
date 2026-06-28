@@ -32,6 +32,7 @@ class Config:
     EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
     OLLAMA_API_BASE_URL = "http://localhost:11434"
     HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE = "cpu"
+    MAX_TEXT_LENGTH = 50000000
 
 @st.cache_resource
 def get_io_executor():
