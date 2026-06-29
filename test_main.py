@@ -167,3 +167,26 @@ def test_load_chats_corrupted_file():
 
         assert result == {}
         mock_open.assert_called_once_with("chats.json", "r")
+
+def test_process_pdf_dos():
+    # 🛡️ Sentinel: Test text extraction limit enforcement (DoS prevention)
+    from main import process_pdf, Config
+
+    # Create a dummy file object
+    dummy_file = MagicMock()
+    dummy_file.name = "dummy.pdf"
+    dummy_file.getbuffer.return_value = b"fake pdf content"
+
+    with patch('main.pypdf.PdfReader') as mock_reader_class:
+        mock_reader = MagicMock()
+        mock_page = MagicMock()
+
+        # Simulate an overly large PDF text extraction
+        mock_page.extract_text.return_value = "A" * (Config.MAX_TEXT_LENGTH + 1)
+        mock_reader.pages = [mock_page]
+        mock_reader_class.return_value = mock_reader
+
+        with patch('main.st.error') as mock_st_error, patch('main.st.stop') as mock_st_stop:
+            process_pdf(dummy_file, chunk_size=500, chunk_overlap=50)
+            mock_st_error.assert_called_once()
+            mock_st_stop.assert_called_once()
