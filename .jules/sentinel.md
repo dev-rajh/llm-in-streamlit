@@ -52,3 +52,8 @@
 **Vulnerability:** The application was extracting text from uploaded PDFs without any upper bound length checks in `process_pdf` and `PDFHelper.ask`.
 **Learning:** Malicious or exceptionally large PDF files (e.g., zip bombs or highly compressed text) could be uploaded to exhaust CPU and Memory resources (Denial of Service) during the extraction process with `pypdf`, leading to application crashes or degraded performance for all users.
 **Prevention:** To prevent CPU and Memory DoS from excessively large PDFs, enforce a maximum text extraction limit (`Config.MAX_TEXT_LENGTH`). A reasonable limit (e.g., 50,000,000 characters) effectively mitigates malicious files without falsely rejecting legitimate large documents like books or reports.
+
+## 2026-06-25 - Prevent OOM DoS via File Buffer
+**Vulnerability:** The application was reading the entire uploaded file into memory using `uploaded_file.getvalue()` instead of `uploaded_file.getbuffer()`.
+**Learning:** For large uploaded files, `getvalue()` causes the application to load the full byte string into memory, creating an Out-Of-Memory (OOM) risk (Denial of Service).
+**Prevention:** Always use `getbuffer()` on `st.file_uploader` objects for efficient file handling to mitigate memory exhaustion risks.
