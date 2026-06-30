@@ -102,7 +102,10 @@ def process_pdf(file, chunk_size, chunk_overlap, parser="pypdf (Default)"):
                 )
                 if os.path.exists(out_md_path):
                     with open(out_md_path, "r", encoding="utf-8") as f:
-                        text = f.read()
+                        # 🛡️ Sentinel: Enforce maximum text extraction length to prevent DoS
+                        text = f.read(Config.MAX_TEXT_LENGTH + 1)
+                        if len(text) > Config.MAX_TEXT_LENGTH:
+                            raise ValueError(f"Extracted text exceeds maximum allowed length of {Config.MAX_TEXT_LENGTH} characters.")
                 else:
                     raise FileNotFoundError("Markdown output file was not generated.")
             except Exception as cli_error:
@@ -115,6 +118,9 @@ def process_pdf(file, chunk_size, chunk_overlap, parser="pypdf (Default)"):
                 extracted_text = page.extract_text()
                 if extracted_text:
                     text += extracted_text + "\n"
+                    # 🛡️ Sentinel: Enforce maximum text extraction length to prevent DoS
+                    if len(text) > Config.MAX_TEXT_LENGTH:
+                        raise ValueError(f"Extracted text exceeds maximum allowed length of {Config.MAX_TEXT_LENGTH} characters.")
 
         chunks = split_text_into_chunks(text, chunk_size, chunk_overlap)
 
@@ -268,7 +274,10 @@ class PDFHelper:
                     )
                     if os.path.exists(out_md_path):
                         with open(out_md_path, "r", encoding="utf-8") as f:
-                            text = f.read()
+                            # 🛡️ Sentinel: Enforce maximum text extraction length to prevent DoS
+                            text = f.read(Config.MAX_TEXT_LENGTH + 1)
+                            if len(text) > Config.MAX_TEXT_LENGTH:
+                                raise ValueError(f"Extracted text exceeds maximum allowed length of {Config.MAX_TEXT_LENGTH} characters.")
                     else:
                         raise FileNotFoundError("Markdown output file was not generated.")
                 except Exception as cli_error:
@@ -282,6 +291,9 @@ class PDFHelper:
                     extracted_text = page.extract_text()
                     if extracted_text:
                         text += extracted_text + "\n"
+                        # 🛡️ Sentinel: Enforce maximum text extraction length to prevent DoS
+                        if len(text) > Config.MAX_TEXT_LENGTH:
+                            raise ValueError(f"Extracted text exceeds maximum allowed length of {Config.MAX_TEXT_LENGTH} characters.")
         except Exception as e:
             print(f"Error extracting text from PDF in PDFHelper.ask: {e}")
             return "An error occurred while reading the PDF file. It might be malformed or corrupted."
