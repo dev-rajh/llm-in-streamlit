@@ -260,7 +260,8 @@ class PDFHelper:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
                 # 🛡️ Sentinel: Assign filename before writing to ensure cleanup in finally block
                 temp_file_path = temp_file.name
-                temp_file.write(uploaded_file.getvalue())
+                # 🛡️ Sentinel: Use getbuffer() instead of getvalue() to prevent reading the entire file into memory at once, mitigating OOM DoS risks.
+                temp_file.write(uploaded_file.getbuffer())
 
             if parser == "Nutrient pdf-to-markdown":
                 temp_dir = tempfile.mkdtemp()

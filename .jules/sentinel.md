@@ -52,3 +52,7 @@
 **Vulnerability:** The application was extracting text from uploaded PDFs without any upper bound length checks in `process_pdf` and `PDFHelper.ask`.
 **Learning:** Malicious or exceptionally large PDF files (e.g., zip bombs or highly compressed text) could be uploaded to exhaust CPU and Memory resources (Denial of Service) during the extraction process with `pypdf`, leading to application crashes or degraded performance for all users.
 **Prevention:** To prevent CPU and Memory DoS from excessively large PDFs, enforce a maximum text extraction limit (`Config.MAX_TEXT_LENGTH`). A reasonable limit (e.g., 50,000,000 characters) effectively mitigates malicious files without falsely rejecting legitimate large documents like books or reports.
+## 2026-06-25 - Prevent OOM DoS via File Uploads
+**Vulnerability:** The application was using `uploaded_file.getvalue()` to process PDF uploads in Streamlit, which reads the entire file content into a memory byte array simultaneously.
+**Learning:** For extremely large file uploads, loading the entire payload directly into memory can trigger an Out-Of-Memory (OOM) exception. This can be exploited to cause a Denial-of-Service (DoS) condition if the server is forced to handle large payloads concurrently.
+**Prevention:** Always use `uploaded_file.getbuffer()` when working with Streamlit file uploads. This returns a `memoryview` instead of copying the file completely into memory, significantly reducing the footprint for file read/write operations and preventing OOM DoS attacks.
