@@ -98,7 +98,8 @@ def process_pdf(file, chunk_size, chunk_overlap, parser="pypdf (Default)"):
                     ["npx", "--yes", "@pspdfkit/pdf-to-markdown", "pdf-to-markdown", "--enable-image-export", filename, out_md_path],
                     check=True,
                     capture_output=True,
-                    text=True
+                    text=True,
+                    timeout=120 # 🛡️ Sentinel: Enforce a timeout to prevent CLI hangs from causing a Denial of Service (DoS)
                 )
                 if os.path.exists(out_md_path):
                     with open(out_md_path, "r", encoding="utf-8") as f:
@@ -271,7 +272,8 @@ class PDFHelper:
                         ["npx", "--yes", "@pspdfkit/pdf-to-markdown", "pdf-to-markdown", "--enable-image-export", temp_file_path, out_md_path],
                         check=True,
                         capture_output=True,
-                        text=True
+                        text=True,
+                        timeout=120 # 🛡️ Sentinel: Enforce a timeout to prevent CLI hangs from causing a Denial of Service (DoS)
                     )
                     if os.path.exists(out_md_path):
                         with open(out_md_path, "r", encoding="utf-8") as f:

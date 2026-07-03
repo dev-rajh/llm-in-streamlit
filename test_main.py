@@ -190,3 +190,29 @@ def test_process_pdf_dos():
             process_pdf(dummy_file, chunk_size=500, chunk_overlap=50)
             mock_st_error.assert_called_once()
             mock_st_stop.assert_called_once()
+
+def test_process_pdf_timeout_fallback():
+    # 🛡️ Sentinel: Test fallback behavior when pdf-to-markdown subprocess times out
+    import subprocess
+    from main import process_pdf
+
+    dummy_file = MagicMock()
+    dummy_file.name = "dummy.pdf"
+    dummy_file.getbuffer.return_value = b"fake pdf content"
+
+    with patch('subprocess.run') as mock_run:
+        # Simulate CLI hanging and raising TimeoutExpired
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd=["npx", "..."], timeout=120)
+
+        with patch('main.pypdf.PdfReader') as mock_reader_class:
+            mock_reader = MagicMock()
+            mock_page = MagicMock()
+            mock_page.extract_text.return_value = "Fallback text extracted via pypdf"
+            mock_reader.pages = [mock_page]
+            mock_reader_class.return_value = mock_reader
+
+            chunks, filename = process_pdf(dummy_file, chunk_size=500, chunk_overlap=50, parser="Nutrient pdf-to-markdown")
+
+            # Should have caught the timeout and fallen back to pypdf without crashing
+            assert len(chunks) > 0
+            assert "Fallback text extracted via pypdf" in chunks[0].page_content
