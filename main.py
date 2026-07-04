@@ -94,11 +94,13 @@ def process_pdf(file, chunk_size, chunk_overlap, parser="pypdf (Default)"):
             out_md_path = os.path.join(temp_dir, "output.md")
             try:
                 # Use subprocess to run the pdf-to-markdown CLI
+                # 🛡️ Sentinel: Added timeout=120 to prevent indefinite hangs (DoS risk) from external CLI tools
                 subprocess.run(
                     ["npx", "--yes", "@pspdfkit/pdf-to-markdown", "pdf-to-markdown", "--enable-image-export", filename, out_md_path],
                     check=True,
                     capture_output=True,
-                    text=True
+                    text=True,
+                    timeout=120
                 )
                 if os.path.exists(out_md_path):
                     with open(out_md_path, "r", encoding="utf-8") as f:
@@ -267,11 +269,13 @@ class PDFHelper:
                 temp_dir = tempfile.mkdtemp()
                 out_md_path = os.path.join(temp_dir, "output.md")
                 try:
+                    # 🛡️ Sentinel: Added timeout=120 to prevent indefinite hangs (DoS risk) from external CLI tools
                     subprocess.run(
                         ["npx", "--yes", "@pspdfkit/pdf-to-markdown", "pdf-to-markdown", "--enable-image-export", temp_file_path, out_md_path],
                         check=True,
                         capture_output=True,
-                        text=True
+                        text=True,
+                        timeout=120
                     )
                     if os.path.exists(out_md_path):
                         with open(out_md_path, "r", encoding="utf-8") as f:
