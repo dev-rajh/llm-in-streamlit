@@ -56,3 +56,8 @@
 **Vulnerability:** The application was using `uploaded_file.getvalue()` to process PDF uploads in Streamlit, which reads the entire file content into a memory byte array simultaneously.
 **Learning:** For extremely large file uploads, loading the entire payload directly into memory can trigger an Out-Of-Memory (OOM) exception. This can be exploited to cause a Denial-of-Service (DoS) condition if the server is forced to handle large payloads concurrently.
 **Prevention:** Always use `uploaded_file.getbuffer()` when working with Streamlit file uploads. This returns a `memoryview` instead of copying the file completely into memory, significantly reducing the footprint for file read/write operations and preventing OOM DoS attacks.
+
+## 2026-06-25 - External CLI Indefinite Hang (DoS)
+**Vulnerability:** The application was using `subprocess.run` to execute an external CLI tool (`@pspdfkit/pdf-to-markdown`) without specifying a `timeout` parameter.
+**Learning:** External tools can hang indefinitely due to malformed input, network issues, or internal bugs. If `subprocess.run` is called without a timeout, it will block the Python thread forever, leading to resource exhaustion and a Denial of Service (DoS) for the application.
+**Prevention:** Always specify a `timeout` parameter (e.g., `timeout=120`) when using `subprocess.run` or similar process execution functions. Ensure the surrounding code handles the resulting `subprocess.TimeoutExpired` exception gracefully.

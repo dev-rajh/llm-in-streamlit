@@ -168,6 +168,36 @@ def test_load_chats_corrupted_file():
         assert result == {}
         mock_open.assert_called_once_with("chats.json", "r")
 
+def test_subprocess_run_timeout():
+    # 🛡️ Sentinel: Test external CLI timeout handling (DoS prevention)
+    from main import process_pdf
+    import subprocess
+
+    dummy_file = MagicMock()
+    dummy_file.name = "dummy.pdf"
+    dummy_file.getbuffer.return_value = b"fake pdf content"
+
+    with patch('main.subprocess.run') as mock_run:
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="npx", timeout=120)
+
+        with patch('main.pypdf.PdfReader') as mock_reader_class:
+            mock_reader = MagicMock()
+            mock_page = MagicMock()
+            mock_page.extract_text.return_value = "Fallback pypdf text"
+            mock_reader.pages = [mock_page]
+            mock_reader_class.return_value = mock_reader
+
+            chunks, filename = process_pdf(dummy_file, chunk_size=500, chunk_overlap=50, parser="Nutrient pdf-to-markdown")
+
+            # The subprocess should have been called with timeout=120
+            args, kwargs = mock_run.call_args
+            assert kwargs.get('timeout') == 120
+
+            # Because of the timeout exception, it should fallback to pypdf
+            mock_reader_class.assert_called_once()
+            assert len(chunks) > 0
+
+
 def test_process_pdf_dos():
     # 🛡️ Sentinel: Test text extraction limit enforcement (DoS prevention)
     from main import process_pdf, Config
