@@ -60,3 +60,7 @@
 **Vulnerability:** External CLI tools (`npx @pspdfkit/pdf-to-markdown`) were executed via `subprocess.run` without a timeout parameter.
 **Learning:** Default behavior of `subprocess.run` can lead to indefinite hangs if the external tool encounters edge cases or hangs, consuming server resources and potentially leading to a Denial of Service (DoS).
 **Prevention:** Always specify a explicit `timeout` parameter (e.g., `timeout=120`) when calling `subprocess.run` for external commands, especially those parsing user-supplied input. Catch `subprocess.TimeoutExpired` to handle the failure gracefully.
+## 2025-02-23 - Shared State File Corruption (Persistent DoS)
+**Vulnerability:** The application was updating `chats.json` by directly opening the file in write mode (`with open("chats.json", "w") as f:`), which is not an atomic operation.
+**Learning:** If the application crashes, the host process dies, or the disk fills up while the file is being written, the resulting `chats.json` file is left empty or malformed. Because this file is read on application startup, a corrupted state file causes the app to crash persistently (Persistent DoS).
+**Prevention:** Use an atomic write pattern for shared state/configuration files. Write data to a temporary file in the same directory, flush and fsync to guarantee data is on disk, and then use `os.replace` to atomically swap the temporary file over the target file.
