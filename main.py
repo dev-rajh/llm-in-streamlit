@@ -41,10 +41,20 @@ def get_io_executor():
 
 def _save_chats_task(chats_data):
     try:
-        with open("chats.json", "w") as f:
-            json.dump(chats_data, f)
+        # 🛡️ Sentinel: Use atomic write to prevent corruption of chats.json (Persistent DoS)
+        with tempfile.NamedTemporaryFile("w", dir=".", delete=False) as tf:
+            json.dump(chats_data, tf)
+            tf.flush()
+            os.fsync(tf.fileno())
+            temp_name = tf.name
+        os.replace(temp_name, "chats.json")
     except Exception as e:
         print(f"Error saving chats: {e}")
+        if 'temp_name' in locals() and os.path.exists(temp_name):
+            try:
+                os.unlink(temp_name)
+            except OSError:
+                pass
 
 # Function to save chats to a JSON file
 def save_chats():
