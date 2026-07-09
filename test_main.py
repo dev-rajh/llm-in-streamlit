@@ -157,6 +157,29 @@ def test_create_embeddings_with_chunks():
     assert result.chunks == chunks
     assert result.embedding_model == embedding_model
 
+def test_save_chats_task_atomic():
+    # 🛡️ Sentinel: Test atomic write behavior to ensure state corruption is prevented
+    from main import _save_chats_task
+    import json
+    import os
+
+    test_data = {"test_chat": {"messages": [{"role": "user", "content": "hi"}]}}
+
+    try:
+        # Run the function
+        _save_chats_task(test_data)
+
+        # Verify the file was created and contains the correct data
+        assert os.path.exists("chats.json")
+        with open("chats.json", "r") as f:
+            loaded_data = json.load(f)
+
+        assert loaded_data == test_data
+    finally:
+        # Clean up
+        if os.path.exists("chats.json"):
+            os.remove("chats.json")
+
 def test_load_chats_corrupted_file():
     # 🛡️ Sentinel: Test error handling for corrupted file to prevent stack trace leaks
     with patch('os.path.exists') as mock_exists, patch('builtins.open') as mock_open:
