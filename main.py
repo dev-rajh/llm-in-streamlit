@@ -40,11 +40,20 @@ def get_io_executor():
     return concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
 def _save_chats_task(chats_data):
+    tempname = None
     try:
-        with open("chats.json", "w") as f:
-            json.dump(chats_data, f)
+        # 🛡️ Sentinel: Use atomic write pattern to prevent state corruption (persistent DoS) during crash/interrupt
+        with tempfile.NamedTemporaryFile('w', dir='.', delete=False) as tf:
+            tempname = tf.name
+            json.dump(chats_data, tf)
+            tf.flush()
+            os.fsync(tf.fileno())
+        os.replace(tempname, "chats.json")
     except Exception as e:
         print(f"Error saving chats: {e}")
+    finally:
+        if tempname is not None and os.path.exists(tempname):
+            os.unlink(tempname)
 
 # Function to save chats to a JSON file
 def save_chats():
