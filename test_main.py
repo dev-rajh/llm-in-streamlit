@@ -198,7 +198,8 @@ def test_process_pdf_dos():
     # Create a dummy file object
     dummy_file = MagicMock()
     dummy_file.name = "dummy.pdf"
-    dummy_file.getbuffer.return_value = b"fake pdf content"
+    # Ensure magic number matches PDF for this test
+    dummy_file.getbuffer.return_value = memoryview(b"%PDF-1.4 fake pdf content")
 
     with patch('main.pypdf.PdfReader') as mock_reader_class:
         mock_reader = MagicMock()
@@ -221,7 +222,8 @@ def test_process_pdf_subprocess_timeout():
 
     dummy_file = MagicMock()
     dummy_file.name = "dummy.pdf"
-    dummy_file.getbuffer.return_value = b"fake pdf content"
+    # Ensure magic number matches PDF for this test
+    dummy_file.getbuffer.return_value = memoryview(b"%PDF-1.4 fake pdf content")
 
     with patch('main.subprocess.run') as mock_run:
         mock_run.side_effect = subprocess.TimeoutExpired(cmd=["npx"], timeout=120)
@@ -243,3 +245,33 @@ def test_process_pdf_subprocess_timeout():
             # Check if it fell back to pypdf correctly and processed the text
             assert len(chunks) > 0
             assert chunks[0].page_content == "fallback pypdf text\n"
+
+def test_process_pdf_invalid_magic_number():
+    # 🛡️ Sentinel: Test magic number validation to verify mitigation of insecure file uploads
+    from main import process_pdf
+
+    dummy_file = MagicMock()
+    dummy_file.name = "dummy.pdf"
+    # Not a PDF magic number
+    dummy_file.getbuffer.return_value = memoryview(b"MZ\x90\x00\x03\x00 fake executable content")
+
+    with patch('main.st.error') as mock_st_error, patch('main.st.stop') as mock_st_stop:
+        chunks, filename = process_pdf(dummy_file, chunk_size=500, chunk_overlap=50)
+
+        mock_st_error.assert_called_once_with("Invalid file format. The uploaded file is not a valid PDF.")
+        mock_st_stop.assert_called_once()
+        assert chunks is None
+        assert filename is None
+
+def test_pdfhelper_invalid_magic_number():
+    # 🛡️ Sentinel: Test magic number validation in PDFHelper
+    from main import PDFHelper
+
+    helper = PDFHelper(ollama_api_base_url="http://localhost")
+    dummy_file = MagicMock()
+    dummy_file.name = "dummy.pdf"
+    # Not a PDF magic number
+    dummy_file.getbuffer.return_value = memoryview(b"MZ\x90\x00\x03\x00 fake executable content")
+
+    result = helper.ask(dummy_file, "What is this?")
+    assert result == "Invalid file format. The uploaded file is not a valid PDF."

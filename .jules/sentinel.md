@@ -60,3 +60,8 @@
 **Vulnerability:** External CLI tools (`npx @pspdfkit/pdf-to-markdown`) were executed via `subprocess.run` without a timeout parameter.
 **Learning:** Default behavior of `subprocess.run` can lead to indefinite hangs if the external tool encounters edge cases or hangs, consuming server resources and potentially leading to a Denial of Service (DoS).
 **Prevention:** Always specify a explicit `timeout` parameter (e.g., `timeout=120`) when calling `subprocess.run` for external commands, especially those parsing user-supplied input. Catch `subprocess.TimeoutExpired` to handle the failure gracefully.
+
+## 2024-05-24 - [Medium] Missing Magic Number Validation on File Uploads
+**Vulnerability:** The application was trusting the user-provided file extension (`.pdf`) or MIME type for file uploads, without verifying the actual content of the file.
+**Learning:** This exposes backend processing libraries (like `pypdf` or `pdf-to-markdown`) to potentially malformed, malicious, or non-PDF files (e.g., executables) disguised as PDFs, leading to insecure file upload handling and potential DoS or exploitation of vulnerabilities in parsing libraries.
+**Prevention:** Implement "magic number" validation on the file buffer before processing. For PDFs, verifying that the first 5 bytes match `%PDF-` effectively mitigates this risk.

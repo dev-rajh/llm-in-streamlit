@@ -89,13 +89,20 @@ def split_text_into_chunks(text, chunk_size, chunk_overlap):
     return chunks
 
 def process_pdf(file, chunk_size, chunk_overlap, parser="pypdf (Default)"):
+    # 🛡️ Sentinel: Validate magic number to prevent processing non-PDFs (mitigating insecure file uploads)
+    buffer = file.getbuffer()
+    if len(buffer) < 5 or bytes(buffer[:5]) != b"%PDF-":
+        st.error("Invalid file format. The uploaded file is not a valid PDF.")
+        st.stop()
+        return None, None
+
     filename = None
     temp_dir = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
             # 🛡️ Sentinel: Assign filename before writing to ensure cleanup if disk is full
             filename = temp_file.name
-            temp_file.write(file.getbuffer())
+            temp_file.write(buffer)
 
         text = ""
         if parser == "Nutrient pdf-to-markdown":
@@ -261,6 +268,11 @@ class PDFHelper:
         self._embedding_model_name = embedding_model_name
 
     def ask(self, uploaded_file, question, parser="pypdf (Default)"):
+        # 🛡️ Sentinel: Validate magic number to prevent processing non-PDFs (mitigating insecure file uploads)
+        buffer = uploaded_file.getbuffer()
+        if len(buffer) < 5 or bytes(buffer[:5]) != b"%PDF-":
+            return "Invalid file format. The uploaded file is not a valid PDF."
+
         embed = load_embedding_model(model_name=self._embedding_model_name)
         
         temp_file_path = None
@@ -272,7 +284,7 @@ class PDFHelper:
                 # 🛡️ Sentinel: Assign filename before writing to ensure cleanup in finally block
                 temp_file_path = temp_file.name
                 # 🛡️ Sentinel: Use getbuffer() instead of getvalue() to prevent reading the entire file into memory at once, mitigating OOM DoS risks.
-                temp_file.write(uploaded_file.getbuffer())
+                temp_file.write(buffer)
 
             if parser == "Nutrient pdf-to-markdown":
                 temp_dir = tempfile.mkdtemp()
