@@ -198,7 +198,7 @@ def test_process_pdf_dos():
     # Create a dummy file object
     dummy_file = MagicMock()
     dummy_file.name = "dummy.pdf"
-    dummy_file.getbuffer.return_value = b"fake pdf content"
+    dummy_file.getbuffer.return_value = b"%PDF-fake pdf content"
 
     with patch('main.pypdf.PdfReader') as mock_reader_class:
         mock_reader = MagicMock()
@@ -221,7 +221,7 @@ def test_process_pdf_subprocess_timeout():
 
     dummy_file = MagicMock()
     dummy_file.name = "dummy.pdf"
-    dummy_file.getbuffer.return_value = b"fake pdf content"
+    dummy_file.getbuffer.return_value = b"%PDF-fake pdf content"
 
     with patch('main.subprocess.run') as mock_run:
         mock_run.side_effect = subprocess.TimeoutExpired(cmd=["npx"], timeout=120)

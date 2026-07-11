@@ -60,3 +60,8 @@
 **Vulnerability:** External CLI tools (`npx @pspdfkit/pdf-to-markdown`) were executed via `subprocess.run` without a timeout parameter.
 **Learning:** Default behavior of `subprocess.run` can lead to indefinite hangs if the external tool encounters edge cases or hangs, consuming server resources and potentially leading to a Denial of Service (DoS).
 **Prevention:** Always specify a explicit `timeout` parameter (e.g., `timeout=120`) when calling `subprocess.run` for external commands, especially those parsing user-supplied input. Catch `subprocess.TimeoutExpired` to handle the failure gracefully.
+
+## 2026-06-25 - Insecure File Upload Vulnerability (Missing Magic Number Validation)
+**Vulnerability:** The application was processing uploaded PDF files without verifying their actual file type, relying solely on the Streamlit file uploader's `type="pdf"` parameter (which only checks the file extension).
+**Learning:** Checking file extensions is insufficient for security. Attackers can rename malicious files (e.g., executables, scripts, or crafted polyglot files) to `.pdf` to bypass extension checks. Passing unvalidated files to external CLI tools (like `@pspdfkit/pdf-to-markdown`) or parsing libraries (like `pypdf`) can lead to arbitrary code execution, denial of service, or other unpredictable vulnerabilities depending on the robustness of those parsers.
+**Prevention:** To prevent insecure file upload vulnerabilities, always validate the file's 'magic number' (file signature) before processing. For PDFs, verify that the first 5 bytes of the uploaded file buffer match `b'%PDF-'`.

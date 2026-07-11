@@ -89,6 +89,10 @@ def split_text_into_chunks(text, chunk_size, chunk_overlap):
     return chunks
 
 def process_pdf(file, chunk_size, chunk_overlap, parser="pypdf (Default)"):
+    # 🛡️ Sentinel: Validate magic number to prevent insecure file upload vulnerabilities
+    if file.getbuffer()[:5] != b"%PDF-":
+        raise ValueError("Invalid file format: Uploaded file is not a valid PDF.")
+
     filename = None
     temp_dir = None
     try:
@@ -261,6 +265,10 @@ class PDFHelper:
         self._embedding_model_name = embedding_model_name
 
     def ask(self, uploaded_file, question, parser="pypdf (Default)"):
+        # 🛡️ Sentinel: Validate magic number to prevent insecure file upload vulnerabilities
+        if uploaded_file.getbuffer()[:5] != b"%PDF-":
+            return "Invalid file format: Uploaded file is not a valid PDF."
+
         embed = load_embedding_model(model_name=self._embedding_model_name)
         
         temp_file_path = None
