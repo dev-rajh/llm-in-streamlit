@@ -92,10 +92,15 @@ def process_pdf(file, chunk_size, chunk_overlap, parser="pypdf (Default)"):
     filename = None
     temp_dir = None
     try:
+        buffer = file.getbuffer()
+        # 🛡️ Sentinel: Validate PDF magic number to prevent processing of malicious/non-PDF files
+        if bytes(buffer[:5]) != b'%PDF-':
+            raise ValueError("Invalid file format: Uploaded file is not a valid PDF.")
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
             # 🛡️ Sentinel: Assign filename before writing to ensure cleanup if disk is full
             filename = temp_file.name
-            temp_file.write(file.getbuffer())
+            temp_file.write(buffer)
 
         text = ""
         if parser == "Nutrient pdf-to-markdown":
@@ -267,12 +272,17 @@ class PDFHelper:
         temp_dir = None
         text = ""
         try:
+            buffer = uploaded_file.getbuffer()
+            # 🛡️ Sentinel: Validate PDF magic number to prevent processing of malicious/non-PDF files
+            if bytes(buffer[:5]) != b'%PDF-':
+                raise ValueError("Invalid file format: Uploaded file is not a valid PDF.")
+
             # Create a temporary file to save the uploaded file content
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
                 # 🛡️ Sentinel: Assign filename before writing to ensure cleanup in finally block
                 temp_file_path = temp_file.name
                 # 🛡️ Sentinel: Use getbuffer() instead of getvalue() to prevent reading the entire file into memory at once, mitigating OOM DoS risks.
-                temp_file.write(uploaded_file.getbuffer())
+                temp_file.write(buffer)
 
             if parser == "Nutrient pdf-to-markdown":
                 temp_dir = tempfile.mkdtemp()
