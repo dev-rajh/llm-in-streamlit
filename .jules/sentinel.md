@@ -60,3 +60,7 @@
 **Vulnerability:** External CLI tools (`npx @pspdfkit/pdf-to-markdown`) were executed via `subprocess.run` without a timeout parameter.
 **Learning:** Default behavior of `subprocess.run` can lead to indefinite hangs if the external tool encounters edge cases or hangs, consuming server resources and potentially leading to a Denial of Service (DoS).
 **Prevention:** Always specify a explicit `timeout` parameter (e.g., `timeout=120`) when calling `subprocess.run` for external commands, especially those parsing user-supplied input. Catch `subprocess.TimeoutExpired` to handle the failure gracefully.
+## 2026-06-25 - Prevent Insecure File Upload Processing
+**Vulnerability:** The application was passing uploaded files to `pypdf` and the `@pspdfkit/pdf-to-markdown` CLI tool without first validating the file format.
+**Learning:** Even if a file ends in `.pdf`, the contents may be malicious, unexpected binary data, or malformed, potentially leading to vulnerabilities in underlying parsing libraries.
+**Prevention:** To prevent insecure file upload vulnerabilities, always validate the file's 'magic number' by checking that the first 5 bytes of the uploaded file buffer match `b'%PDF-'` before passing it to parsing libraries or external tools. Streamlit's `UploadedFile.getbuffer()` returns a `memoryview`, so cast the slice to bytes first, e.g., `bytes(file_buffer[:5]) == b'%PDF-'`.
