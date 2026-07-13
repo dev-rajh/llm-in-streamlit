@@ -64,3 +64,8 @@
 **Vulnerability:** The application was passing uploaded files to `pypdf` and the `@pspdfkit/pdf-to-markdown` CLI tool without first validating the file format.
 **Learning:** Even if a file ends in `.pdf`, the contents may be malicious, unexpected binary data, or malformed, potentially leading to vulnerabilities in underlying parsing libraries.
 **Prevention:** To prevent insecure file upload vulnerabilities, always validate the file's 'magic number' by checking that the first 5 bytes of the uploaded file buffer match `b'%PDF-'` before passing it to parsing libraries or external tools. Streamlit's `UploadedFile.getbuffer()` returns a `memoryview`, so cast the slice to bytes first, e.g., `bytes(file_buffer[:5]) == b'%PDF-'`.
+
+## 2026-06-25 - Iterative Context Building to Prevent Memory DoS
+**Vulnerability:** The application was concatenating text chunks using `"\n\n".join([chunk.page_content for chunk in chunks])` and applying a length limit *after* the entire string was built in memory.
+**Learning:** For extremely large documents with many chunks, building the entire unbounded string in memory first can exhaust server RAM and cause an Out-Of-Memory (OOM) Denial of Service (DoS) crash, even if the final result is truncated. The truncation logic must be applied *during* construction, not after.
+**Prevention:** Iteratively build large strings from chunks and enforce length limits at each step. Track the current length and `break` the loop once the maximum size is reached, rather than buffering unbounded data into memory.
