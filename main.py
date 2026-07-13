@@ -188,7 +188,27 @@ class SimpleVectorStore:
             json.dump([chunk.page_content for chunk in self.chunks], f)
 
 def create_context(chunks):
-    return "\n\n".join([chunk.page_content for chunk in chunks])
+    # 🛡️ Sentinel: Enforce maximum context size iteratively to prevent unbounded memory/disk usage (DoS) when saving to chats.json
+    max_context_length = 50000
+    context_parts = []
+    current_length = 0
+
+    for chunk in chunks:
+        part = chunk.page_content
+        # Account for the separator if not the first part
+        sep_length = 2 if context_parts else 0
+
+        if current_length + sep_length + len(part) > max_context_length:
+            remaining = max_context_length - (current_length + sep_length)
+            if remaining > 0:
+                context_parts.append(part[:remaining])
+            context_parts.append("... [Context truncated to prevent DoS]")
+            break
+
+        context_parts.append(part)
+        current_length += sep_length + len(part)
+
+    return "\n\n".join(context_parts)
 
 @st.cache_resource
 def load_embedding_model(model_name, normalize_embedding=True):

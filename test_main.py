@@ -53,6 +53,15 @@ def test_split_text_into_chunks_valid():
     chunks = split_text_into_chunks("hello world", 10, 5)
     assert len(chunks) > 0
 
+def test_create_context_dos():
+    # 🛡️ Sentinel: Test context truncation to prevent DoS via unbounded disk/memory usage
+    from main import create_context, Document
+    # Use keyword argument for Pydantic/LangChain compatible Document
+    chunks = [Document(page_content="A" * 30000), Document(page_content="B" * 30000)]
+    context = create_context(chunks)
+    assert len(context) <= 50050 # 50000 + length of truncation message
+    assert "[Context truncated to prevent DoS]" in context
+
 def test_get_response_basic():
     # Mock retriever
     mock_retriever = MagicMock()
