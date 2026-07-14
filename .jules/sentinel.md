@@ -64,3 +64,8 @@
 **Vulnerability:** The application was passing uploaded files to `pypdf` and the `@pspdfkit/pdf-to-markdown` CLI tool without first validating the file format.
 **Learning:** Even if a file ends in `.pdf`, the contents may be malicious, unexpected binary data, or malformed, potentially leading to vulnerabilities in underlying parsing libraries.
 **Prevention:** To prevent insecure file upload vulnerabilities, always validate the file's 'magic number' by checking that the first 5 bytes of the uploaded file buffer match `b'%PDF-'` before passing it to parsing libraries or external tools. Streamlit's `UploadedFile.getbuffer()` returns a `memoryview`, so cast the slice to bytes first, e.g., `bytes(file_buffer[:5]) == b'%PDF-'`.
+
+## 2026-06-25 - Unbounded String Concatenation Leading to OOM DoS
+**Vulnerability:** The application was using `"\n\n".join(...)` to concatenate all text chunks retrieved from large PDFs to build the context for LLM prompts in `create_context`.
+**Learning:** Python's `.join()` builds the entire string in memory before truncating or bounding it. If a massive amount of text is extracted or submitted, joining it can cause an Out-Of-Memory (OOM) exception, resulting in a Denial of Service (DoS) vulnerability.
+**Prevention:** When concatenating potentially massive arrays of text chunks (e.g., generating LLM context from PDFs), avoid building the entire string in memory at once. Instead, iteratively accumulate and check the length during assembly to prevent OOM DoS.
