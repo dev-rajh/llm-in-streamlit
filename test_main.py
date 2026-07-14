@@ -243,3 +243,41 @@ def test_process_pdf_subprocess_timeout():
             # Check if it fell back to pypdf correctly and processed the text
             assert len(chunks) > 0
             assert chunks[0].page_content == "fallback pypdf text\n"
+
+def test_create_context_respects_max_length():
+    # 🛡️ Sentinel: Ensure create_context does not exceed Config.MAX_TEXT_LENGTH
+    from main import create_context, Document, Config
+    import unittest.mock
+
+    with unittest.mock.patch('main.Config.MAX_TEXT_LENGTH', 20):
+        chunks = [
+            Document(page_content="0123456789"),
+            Document(page_content="0123456789")
+        ]
+        context = create_context(chunks)
+        assert context == "0123456789\n\n01234567"
+        assert len(context) == 20
+
+def test_create_context_does_not_exceed_max_length():
+    # 🛡️ Sentinel: Ensure create_context handles large inputs smoothly
+    from main import create_context, Document, Config
+    import unittest.mock
+
+    with unittest.mock.patch('main.Config.MAX_TEXT_LENGTH', 20):
+        chunks = [
+            Document(page_content="012345678901234567890123456789")
+        ]
+        context = create_context(chunks)
+        assert context == "01234567890123456789"
+        assert len(context) == 20
+
+def test_create_context_small_chunks():
+    # 🛡️ Sentinel: Normal behavior for create_context
+    from main import create_context, Document, Config
+
+    chunks = [
+        Document(page_content="hello"),
+        Document(page_content="world")
+    ]
+    context = create_context(chunks)
+    assert context == "hello\n\nworld"

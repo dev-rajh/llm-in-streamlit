@@ -188,7 +188,20 @@ class SimpleVectorStore:
             json.dump([chunk.page_content for chunk in self.chunks], f)
 
 def create_context(chunks):
-    return "\n\n".join([chunk.page_content for chunk in chunks])
+    # 🛡️ Sentinel: Iteratively build context to prevent OOM DoS by enforcing a maximum length.
+    context = ""
+    for chunk in chunks:
+        separator = "\n\n" if len(context) > 0 else ""
+
+        if len(context) + len(separator) + len(chunk.page_content) > Config.MAX_TEXT_LENGTH:
+            remaining = Config.MAX_TEXT_LENGTH - len(context) - len(separator)
+            if remaining > 0:
+                context += separator + chunk.page_content[:remaining]
+            break
+
+        context += separator + chunk.page_content
+
+    return context
 
 @st.cache_resource
 def load_embedding_model(model_name, normalize_embedding=True):
@@ -227,7 +240,7 @@ def create_embeddings(chunks, embedding_model, storing_path="vectorstore"):
 
 def get_response(query, retriever, model, base_url, template):
     relevant_docs = retriever.get_relevant_documents(query)
-    context = "\n\n".join([doc.page_content for doc in relevant_docs])
+    context = create_context(relevant_docs)
 
     # 🛡️ Sentinel: Use string.Template for safe substitution to prevent Context Poisoning/Prompt Injection vulnerabilities present in sequential string replacements, and to avoid KeyError/ValueError from user-controlled input containing unescaped curly braces in template.format().
     prompt = string.Template(template).safe_substitute(context=context, question=query)
