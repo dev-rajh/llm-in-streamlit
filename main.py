@@ -7,6 +7,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 import os
 import json
+import time
 from datetime import datetime
 import string
 import hashlib
@@ -33,6 +34,7 @@ class Config:
     OLLAMA_API_BASE_URL = "http://localhost:11434"
     HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE = "cpu"
     MAX_TEXT_LENGTH = 50000000
+    RATE_LIMIT_SECONDS = 2
 
 @st.cache_resource
 def get_io_executor():
@@ -401,6 +403,8 @@ def main():
         st.session_state.context = ""
     if "current_file" not in st.session_state:
         st.session_state.current_file = None
+    if "last_request_time" not in st.session_state:
+        st.session_state.last_request_time = 0
 
     with st.sidebar:
         st.write('This chatbot can chat normally or answer questions about a PDF file.')
@@ -471,6 +475,13 @@ def main():
 
     # Chat input and response handling
     if prompt := st.chat_input("What is your question?", max_chars=4000):
+        # 🛡️ Sentinel: Enforce rate limiting on chat input to prevent CPU/Backend API DoS from spamming
+        current_time = time.time()
+        if current_time - st.session_state.last_request_time < Config.RATE_LIMIT_SECONDS:
+            st.error(f"Rate limit exceeded. Please wait {Config.RATE_LIMIT_SECONDS} seconds between requests.")
+            st.stop()
+        st.session_state.last_request_time = current_time
+
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.session_state.messages.append({"role": "user", "content": prompt, "timestamp": timestamp})
         
