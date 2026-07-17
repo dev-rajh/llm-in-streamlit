@@ -7,6 +7,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 import os
 import json
+import time
 from datetime import datetime
 import string
 import hashlib
@@ -401,6 +402,8 @@ def main():
         st.session_state.context = ""
     if "current_file" not in st.session_state:
         st.session_state.current_file = None
+    if "last_request_time" not in st.session_state:
+        st.session_state.last_request_time = 0.0
 
     with st.sidebar:
         st.write('This chatbot can chat normally or answer questions about a PDF file.')
@@ -471,6 +474,13 @@ def main():
 
     # Chat input and response handling
     if prompt := st.chat_input("What is your question?", max_chars=4000):
+        # 🛡️ Sentinel: Enforce application-layer rate limiting to prevent API spamming and backend DoS
+        current_time = time.time()
+        if current_time - st.session_state.last_request_time < 2.0:
+            st.error("You are sending requests too quickly. Please wait a moment before trying again.")
+            st.stop()
+        st.session_state.last_request_time = current_time
+
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.session_state.messages.append({"role": "user", "content": prompt, "timestamp": timestamp})
         
