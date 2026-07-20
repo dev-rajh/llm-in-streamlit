@@ -64,3 +64,8 @@
 **Vulnerability:** The application was passing uploaded files to `pypdf` and the `@pspdfkit/pdf-to-markdown` CLI tool without first validating the file format.
 **Learning:** Even if a file ends in `.pdf`, the contents may be malicious, unexpected binary data, or malformed, potentially leading to vulnerabilities in underlying parsing libraries.
 **Prevention:** To prevent insecure file upload vulnerabilities, always validate the file's 'magic number' by checking that the first 5 bytes of the uploaded file buffer match `b'%PDF-'` before passing it to parsing libraries or external tools. Streamlit's `UploadedFile.getbuffer()` returns a `memoryview`, so cast the slice to bytes first, e.g., `bytes(file_buffer[:5]) == b'%PDF-'`.
+
+## 2026-06-28 - Backend Resource Exhaustion via Chat Input Spam
+**Vulnerability:** The Streamlit application lacked application-layer rate limiting for the chat interface. A user could repeatedly submit prompts as fast as possible, each triggering an expensive LLM inference call on the backend, leading to a Denial of Service (DoS) due to CPU/GPU/memory resource exhaustion.
+**Learning:** External API rate limits are not sufficient if the backend service (like Ollama) runs locally or lacks its own aggressive throttling. Streamlit's `st.chat_input` must be protected by application-level rate limiting (e.g., using `time.time()` and tracking the timestamp in `st.session_state`) to prevent malicious spamming.
+**Prevention:** Implement application-layer rate limiting on interactive inputs. Verify the time delta since the last request using `time.time()` and `st.session_state`, and use `st.error()` and `st.stop()` to gracefully halt execution if the user is spamming the interface.

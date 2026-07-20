@@ -9,6 +9,7 @@ import os
 import json
 from datetime import datetime
 import string
+import time
 import hashlib
 import tempfile
 import torch
@@ -401,6 +402,8 @@ def main():
         st.session_state.context = ""
     if "current_file" not in st.session_state:
         st.session_state.current_file = None
+    if "last_request_time" not in st.session_state:
+        st.session_state.last_request_time = 0
 
     with st.sidebar:
         st.write('This chatbot can chat normally or answer questions about a PDF file.')
@@ -471,6 +474,13 @@ def main():
 
     # Chat input and response handling
     if prompt := st.chat_input("What is your question?", max_chars=4000):
+        current_time = time.time()
+        # 🛡️ Sentinel: Rate limiting to prevent DoS attacks on the LLM backend
+        if current_time - st.session_state.last_request_time < 2:
+            st.error("Please wait a few seconds before sending another message.")
+            st.stop()
+        st.session_state.last_request_time = current_time
+
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.session_state.messages.append({"role": "user", "content": prompt, "timestamp": timestamp})
         
