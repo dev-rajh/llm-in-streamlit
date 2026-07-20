@@ -69,6 +69,11 @@ def test_get_response_basic():
     ]
 
     template = "Context: $context\\nQuestion: $question"
+    # Reset mock since it might have been called by previous tests
+    sys.modules['ollama'].Client.reset_mock()
+    mock_client_instance.chat.reset_mock()
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+
     result = get_response("test query", mock_retriever, "test-model", "http://test", template)
 
     assert result == "test result"
@@ -213,6 +218,48 @@ def test_process_pdf_dos():
             process_pdf(dummy_file, chunk_size=500, chunk_overlap=50)
             mock_st_error.assert_called_once()
             mock_st_stop.assert_called_once()
+
+def test_rate_limiting():
+    # 🛡️ Sentinel: Test rate limiting to prevent backend DoS
+    class SessionStateMock(dict):
+        def __getattr__(self, name):
+            return self.get(name)
+        def __setattr__(self, name, value):
+            self[name] = value
+
+    state = SessionStateMock()
+    state.last_request_time = 100
+    state.chats = {"chat1": {"messages": [], "context": "", "file": None}}
+    state.current_chat = "New Chat"
+    state.messages = []
+    state.context = ""
+    state.current_file = None
+
+    with patch('main.st.session_state', state):
+        with patch('main.st.chat_input') as mock_chat_input:
+            mock_chat_input.return_value = "hello"
+
+            with patch('main.get_available_models') as mock_get_models:
+                mock_get_models.return_value = [{'model': 'dummy'}]
+
+                with patch('main.st.file_uploader') as mock_file_uploader:
+                    mock_file_uploader.return_value = None
+
+                    with patch('main.st.selectbox') as mock_selectbox:
+                        mock_selectbox.return_value = "New Chat"
+
+                        with patch('main.time.time') as mock_time:
+                            # 1.5 seconds since last request - should be blocked
+                            mock_time.return_value = 101.5
+
+                            with patch('main.st.error') as mock_error, patch('main.st.stop') as mock_stop:
+                                try:
+                                    main.main()
+                                except Exception:
+                                    pass # We expect it might stop or fail later in the mock chain
+
+                                mock_error.assert_any_call("Please wait a few seconds before sending another message.")
+                                mock_stop.assert_called()
 
 def test_process_pdf_subprocess_timeout():
     # 🛡️ Sentinel: Test timeout handling for subprocess.run to verify DoS mitigation
