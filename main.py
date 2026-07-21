@@ -189,7 +189,16 @@ class SimpleVectorStore:
             json.dump([chunk.page_content for chunk in self.chunks], f)
 
 def create_context(chunks):
-    return "\n\n".join([chunk.page_content for chunk in chunks])
+    # 🛡️ Sentinel: Iteratively accumulate and check length to prevent OOM DoS
+    context_parts = []
+    current_length = 0
+    for chunk in chunks:
+        part_len = len(chunk.page_content)
+        if current_length + part_len > Config.MAX_TEXT_LENGTH:
+            break
+        context_parts.append(chunk.page_content)
+        current_length += part_len + 2 # account for "\n\n"
+    return "\n\n".join(context_parts)
 
 @st.cache_resource
 def load_embedding_model(model_name, normalize_embedding=True):

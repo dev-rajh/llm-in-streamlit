@@ -69,3 +69,8 @@
 **Vulnerability:** The Streamlit application lacked application-layer rate limiting for the chat interface. A user could repeatedly submit prompts as fast as possible, each triggering an expensive LLM inference call on the backend, leading to a Denial of Service (DoS) due to CPU/GPU/memory resource exhaustion.
 **Learning:** External API rate limits are not sufficient if the backend service (like Ollama) runs locally or lacks its own aggressive throttling. Streamlit's `st.chat_input` must be protected by application-level rate limiting (e.g., using `time.time()` and tracking the timestamp in `st.session_state`) to prevent malicious spamming.
 **Prevention:** Implement application-layer rate limiting on interactive inputs. Verify the time delta since the last request using `time.time()` and `st.session_state`, and use `st.error()` and `st.stop()` to gracefully halt execution if the user is spamming the interface.
+
+## 2026-06-25 - Prevent OOM DoS during Context Assembly
+**Vulnerability:** The application was using `\n\n.join()` on a potentially very large array of text chunks in `create_context()` without any length limits.
+**Learning:** If an attacker can inject excessively large or numerous text chunks, building the entire concatenated string in memory before processing can cause an Out-Of-Memory (OOM) Denial of Service (DoS) vulnerability.
+**Prevention:** When concatenating large arrays of text chunks, avoid building the entire string in memory at once. Instead, iteratively accumulate the chunks and check the total length during assembly, stopping or truncating when the maximum allowed length (e.g., `Config.MAX_TEXT_LENGTH`) is reached.
