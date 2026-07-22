@@ -303,3 +303,54 @@ def test_process_pdf_subprocess_timeout():
             # Check if it fell back to pypdf correctly and processed the text
             assert len(chunks) > 0
             assert chunks[0].page_content == "fallback pypdf text\n"
+
+def test_get_response_dos():
+    # 🛡️ Sentinel: Test DoS protection limits on LLM response length
+    from main import get_response, Config
+    original_max = getattr(Config, 'MAX_RESPONSE_LENGTH', 50000)
+    try:
+        Config.MAX_RESPONSE_LENGTH = 10
+        mock_retriever = MagicMock()
+        mock_retriever.get_relevant_documents.return_value = []
+
+        mock_client_instance = MagicMock()
+        sys.modules['ollama'].Client.return_value = mock_client_instance
+        # Return a response longer than MAX_RESPONSE_LENGTH
+        mock_client_instance.chat.return_value = [
+            {'message': {'content': 'This is a '}},
+            {'message': {'content': 'very long response '}},
+            {'message': {'content': 'that should be truncated.'}}
+        ]
+
+        template = "$context $question"
+        result = get_response("test query", mock_retriever, "test-model", "http://test", template)
+
+        assert len(result) > 10
+        assert "[Warning: Response truncated" in result
+        assert "truncated." not in result
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
+
+def test_chat_without_pdf_dos():
+    # 🛡️ Sentinel: Test DoS protection limits on LLM response length
+    from main import chat_without_pdf, Config
+    original_max = getattr(Config, 'MAX_RESPONSE_LENGTH', 50000)
+    try:
+        Config.MAX_RESPONSE_LENGTH = 10
+
+        mock_client_instance = MagicMock()
+        sys.modules['ollama'].Client.return_value = mock_client_instance
+        # Return a response longer than MAX_RESPONSE_LENGTH
+        mock_client_instance.chat.return_value = [
+            {'message': {'content': 'This is a '}},
+            {'message': {'content': 'very long response '}},
+            {'message': {'content': 'that should be truncated.'}}
+        ]
+
+        result = chat_without_pdf("test query", "test-model")
+
+        assert len(result) > 10
+        assert "[Warning: Response truncated" in result
+        assert "truncated." not in result
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
