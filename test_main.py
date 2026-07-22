@@ -261,6 +261,19 @@ def test_rate_limiting():
                                 mock_error.assert_any_call("Please wait a few seconds before sending another message.")
                                 mock_stop.assert_called()
 
+def test_create_context_oom_dos():
+    # 🛡️ Sentinel: Verify create_context enforces maximum length to prevent OOM DoS
+    from main import create_context, Config, Document
+    original_max = Config.MAX_TEXT_LENGTH
+    try:
+        Config.MAX_TEXT_LENGTH = 100
+        chunks = [Document("A" * 60), Document("B" * 60)]
+        result = create_context(chunks)
+        assert result == "A" * 60
+        assert len(result) <= Config.MAX_TEXT_LENGTH
+    finally:
+        Config.MAX_TEXT_LENGTH = original_max
+
 def test_process_pdf_subprocess_timeout():
     # 🛡️ Sentinel: Test timeout handling for subprocess.run to verify DoS mitigation
     from main import process_pdf
