@@ -86,6 +86,34 @@ def test_get_response_basic():
     assert kwargs['messages'][0]['content'] == "Context: doc content\\nQuestion: test query"
     assert kwargs['stream'] is True
 
+def test_get_response_dos_length_limit():
+    # 🛡️ Sentinel: Test response length limit enforcement to prevent OOM DoS
+    from main import get_response, Config
+
+    mock_retriever = MagicMock()
+    mock_retriever.get_relevant_documents.return_value = []
+
+    mock_client_instance = MagicMock()
+    import sys
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+
+    # Simulate an infinite stream of chunks
+    def mock_chat_stream(*args, **kwargs):
+        while True:
+            yield {'message': {'content': 'A' * 10000}}
+    mock_client_instance.chat.side_effect = mock_chat_stream
+
+    template = "$context $question"
+    # Temporarily lower the max response length for testing
+    original_max = Config.MAX_RESPONSE_LENGTH
+    Config.MAX_RESPONSE_LENGTH = 25000
+    try:
+        result = get_response("test query", mock_retriever, "test-model", "http://test", template)
+        assert len(result) <= Config.MAX_RESPONSE_LENGTH + len("\n\n[Response truncated]")
+        assert "[Response truncated]" in result
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
+
 def test_get_response_empty_result():
     mock_retriever = MagicMock()
     mock_retriever.get_relevant_documents.return_value = []
