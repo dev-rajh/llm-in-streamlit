@@ -274,6 +274,48 @@ def test_create_context_oom_dos():
     finally:
         Config.MAX_TEXT_LENGTH = original_max
 
+def test_get_response_oom_dos():
+    # 🛡️ Sentinel: Verify OOM DoS mitigation during infinite stream
+    from main import Config, get_response
+    mock_retriever = MagicMock()
+    mock_retriever.get_relevant_documents.return_value = []
+
+    def infinite_stream(*args, **kwargs):
+        while True:
+            yield {'message': {'content': 'A' * 1000}}
+
+    mock_client_instance = MagicMock()
+    import sys
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+    mock_client_instance.chat.side_effect = infinite_stream
+
+    sys.modules['ollama'].Client.reset_mock()
+    mock_client_instance.chat.reset_mock()
+
+    result = get_response("test query", mock_retriever, "test-model", "http://test", "$context $question")
+
+    assert len(result) <= Config.MAX_RESPONSE_LENGTH
+
+def test_chat_without_pdf_oom_dos():
+    # 🛡️ Sentinel: Verify OOM DoS mitigation during infinite stream
+    from main import Config, chat_without_pdf
+
+    def infinite_stream(*args, **kwargs):
+        while True:
+            yield {'message': {'content': 'A' * 1000}}
+
+    mock_client_instance = MagicMock()
+    import sys
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+    mock_client_instance.chat.side_effect = infinite_stream
+
+    sys.modules['ollama'].Client.reset_mock()
+    mock_client_instance.chat.reset_mock()
+
+    result = chat_without_pdf("test prompt", "test-model")
+
+    assert len(result) <= Config.MAX_RESPONSE_LENGTH
+
 def test_process_pdf_subprocess_timeout():
     # 🛡️ Sentinel: Test timeout handling for subprocess.run to verify DoS mitigation
     from main import process_pdf
