@@ -303,3 +303,28 @@ def test_process_pdf_subprocess_timeout():
             # Check if it fell back to pypdf correctly and processed the text
             assert len(chunks) > 0
             assert chunks[0].page_content == "fallback pypdf text\n"
+
+def test_streaming_response_oom_dos_mitigation():
+    # 🛡️ Sentinel: Test OOM DoS mitigation during LLM streaming
+    from main import chat_without_pdf, Config
+    from unittest.mock import patch
+    original_max = Config.MAX_RESPONSE_LENGTH
+
+    def infinite_stream_generator(*args, **kwargs):
+        while True:
+            yield {'message': {'content': 'A' * 1000}}
+
+    try:
+        Config.MAX_RESPONSE_LENGTH = 5000
+
+        with patch('main.ollama.Client') as mock_client_class:
+            mock_client_instance = mock_client_class.return_value
+            mock_client_instance.chat.side_effect = infinite_stream_generator
+
+            result = chat_without_pdf("test prompt", "test-model")
+
+            assert len(result) > 5000
+            assert result.endswith("... [Truncated]")
+            assert len(result) == 5000 + len("... [Truncated]")
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
