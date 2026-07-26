@@ -303,3 +303,56 @@ def test_process_pdf_subprocess_timeout():
             # Check if it fell back to pypdf correctly and processed the text
             assert len(chunks) > 0
             assert chunks[0].page_content == "fallback pypdf text\n"
+
+
+def test_get_response_oom_dos():
+    # 🛡️ Sentinel: Verify LLM response streaming enforces max length to prevent OOM DoS
+    from main import get_response, Config
+
+    mock_retriever = MagicMock()
+    mock_retriever.get_relevant_documents.return_value = []
+
+    original_max = Config.MAX_RESPONSE_LENGTH
+    Config.MAX_RESPONSE_LENGTH = 10
+
+    try:
+        mock_client_instance = MagicMock()
+        sys.modules['ollama'].Client.return_value = mock_client_instance
+        # Simulate an infinite stream of chunks
+        def chunk_generator():
+            while True:
+                yield {'message': {'content': 'chunk '}}
+
+        mock_client_instance.chat.side_effect = lambda **kwargs: chunk_generator()
+
+        template = "$context $question"
+        result = get_response("test query", mock_retriever, "test-model", "http://test", template)
+
+        assert len(result) <= Config.MAX_RESPONSE_LENGTH
+        assert result == "chunk chun"
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
+
+def test_chat_without_pdf_oom_dos():
+    # 🛡️ Sentinel: Verify LLM response streaming enforces max length to prevent OOM DoS
+    from main import chat_without_pdf, Config
+
+    original_max = Config.MAX_RESPONSE_LENGTH
+    Config.MAX_RESPONSE_LENGTH = 10
+
+    try:
+        mock_client_instance = MagicMock()
+        sys.modules['ollama'].Client.return_value = mock_client_instance
+        # Simulate an infinite stream of chunks
+        def chunk_generator():
+            while True:
+                yield {'message': {'content': 'chunk '}}
+
+        mock_client_instance.chat.side_effect = lambda **kwargs: chunk_generator()
+
+        result = chat_without_pdf("test query", "test-model")
+
+        assert len(result) <= Config.MAX_RESPONSE_LENGTH
+        assert result == "chunk chun"
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
