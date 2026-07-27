@@ -86,6 +86,56 @@ def test_get_response_basic():
     assert kwargs['messages'][0]['content'] == "Context: doc content\\nQuestion: test query"
     assert kwargs['stream'] is True
 
+def test_get_response_oom_dos():
+    # 🛡️ Sentinel: Verify get_response enforces maximum response length to prevent OOM DoS
+    from main import Config
+    mock_retriever = MagicMock()
+    mock_retriever.get_relevant_documents.return_value = [Document(page_content="doc content")]
+    mock_client_instance = MagicMock()
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+
+    def infinite_stream(*args, **kwargs):
+        while True:
+            yield {'message': {'content': 'A' * 1000}}
+
+    mock_client_instance.chat.side_effect = infinite_stream
+    template = "$context $question"
+    sys.modules['ollama'].Client.reset_mock()
+    mock_client_instance.chat.reset_mock()
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+
+    original_max = Config.MAX_RESPONSE_LENGTH
+    try:
+        Config.MAX_RESPONSE_LENGTH = 5000
+        result = get_response("query", mock_retriever, "model", "http://test", template)
+        assert len(result) == 5000
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
+
+def test_chat_without_pdf_oom_dos():
+    # 🛡️ Sentinel: Verify chat_without_pdf enforces maximum response length to prevent OOM DoS
+    from main import chat_without_pdf, Config
+    mock_client_instance = MagicMock()
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+
+    def infinite_stream(*args, **kwargs):
+        while True:
+            yield {'message': {'content': 'B' * 1000}}
+
+    mock_client_instance.chat.side_effect = infinite_stream
+    sys.modules['ollama'].Client.reset_mock()
+    mock_client_instance.chat.reset_mock()
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+
+    original_max = Config.MAX_RESPONSE_LENGTH
+    try:
+        Config.MAX_RESPONSE_LENGTH = 5000
+        result = chat_without_pdf("query", "model")
+        assert len(result) == 5000
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
+
+
 def test_get_response_empty_result():
     mock_retriever = MagicMock()
     mock_retriever.get_relevant_documents.return_value = []
