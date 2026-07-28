@@ -303,3 +303,33 @@ def test_process_pdf_subprocess_timeout():
             # Check if it fell back to pypdf correctly and processed the text
             assert len(chunks) > 0
             assert chunks[0].page_content == "fallback pypdf text\n"
+
+def test_get_response_oom_dos():
+    # 🛡️ Sentinel: Test that get_response truncates infinite streams to prevent OOM DoS
+    mock_retriever = MagicMock()
+    mock_retriever.get_relevant_documents.return_value = []
+
+    mock_client_instance = MagicMock()
+
+    def infinite_stream(*args, **kwargs):
+        while True:
+            yield {'message': {'content': 'A' * 1000}}
+
+    mock_client_instance.chat.side_effect = infinite_stream
+
+    from main import Config, get_response
+    original_max = getattr(Config, 'MAX_RESPONSE_LENGTH', None)
+    Config.MAX_RESPONSE_LENGTH = 5000
+
+    try:
+        with patch('main.ollama.Client') as mock_client_class:
+            mock_client_class.return_value = mock_client_instance
+            template = "$context $question"
+            result = get_response("test query", mock_retriever, "test-model", "http://test", template)
+            assert len(result) <= Config.MAX_RESPONSE_LENGTH + 100
+            assert "[Response truncated due to length limits]" in result
+    finally:
+        if original_max is not None:
+            Config.MAX_RESPONSE_LENGTH = original_max
+        else:
+            delattr(Config, 'MAX_RESPONSE_LENGTH')
