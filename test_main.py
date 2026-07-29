@@ -274,6 +274,51 @@ def test_create_context_oom_dos():
     finally:
         Config.MAX_TEXT_LENGTH = original_max
 
+def test_get_response_oom_dos():
+    # 🛡️ Sentinel: Verify LLM streaming response length limit (OOM DoS prevention)
+    from main import get_response, Config, Document
+    mock_retriever = MagicMock()
+    mock_retriever.get_relevant_documents.return_value = [Document(page_content="doc content")]
+    mock_client_instance = MagicMock()
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+
+    def mock_stream(*args, **kwargs):
+        while True:
+            yield {'message': {'content': 'A' * 1000}}
+
+    mock_client_instance.chat.side_effect = mock_stream
+    sys.modules['ollama'].Client.reset_mock()
+
+    # Temporarily set max length to a smaller value for testing
+    original_max = Config.MAX_RESPONSE_LENGTH
+    try:
+        Config.MAX_RESPONSE_LENGTH = 5000
+        result = get_response("test query", mock_retriever, "test-model", "http://test", "$context $question")
+        assert len(result) == 5000
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
+
+def test_chat_without_pdf_oom_dos():
+    # 🛡️ Sentinel: Verify LLM streaming response length limit (OOM DoS prevention)
+    from main import chat_without_pdf, Config
+    mock_client_instance = MagicMock()
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+
+    def mock_stream(*args, **kwargs):
+        while True:
+            yield {'message': {'content': 'A' * 1000}}
+
+    mock_client_instance.chat.side_effect = mock_stream
+    sys.modules['ollama'].Client.reset_mock()
+
+    original_max = Config.MAX_RESPONSE_LENGTH
+    try:
+        Config.MAX_RESPONSE_LENGTH = 5000
+        result = chat_without_pdf("test query", "test-model")
+        assert len(result) == 5000
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
+
 def test_process_pdf_subprocess_timeout():
     # 🛡️ Sentinel: Test timeout handling for subprocess.run to verify DoS mitigation
     from main import process_pdf
