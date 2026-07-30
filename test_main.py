@@ -53,6 +53,42 @@ def test_split_text_into_chunks_valid():
     chunks = split_text_into_chunks("hello world", 10, 5)
     assert len(chunks) > 0
 
+def test_streaming_response_oom_dos():
+    # 🛡️ Sentinel: Test enforcement of maximum response length to prevent OOM DoS
+    from main import get_response, Config
+    from unittest.mock import MagicMock
+    import sys
+
+    original_max_length = getattr(Config, 'MAX_RESPONSE_LENGTH', None)
+    Config.MAX_RESPONSE_LENGTH = 20
+
+    try:
+        mock_retriever = MagicMock()
+        mock_retriever.get_relevant_documents.return_value = []
+
+        mock_client_instance = MagicMock()
+
+        def mock_stream(*args, **kwargs):
+            while True:
+                yield {'message': {'content': 'A' * 10}}
+
+        mock_client_instance.chat.side_effect = mock_stream
+
+        sys.modules['ollama'].Client.return_value = mock_client_instance
+        sys.modules['ollama'].Client.reset_mock()
+        mock_client_instance.chat.reset_mock()
+
+        template = "$context $question"
+        result = get_response("test query", mock_retriever, "test-model", "http://test", template)
+
+        assert len(result) <= Config.MAX_RESPONSE_LENGTH + 100
+        assert "truncated" in result
+    finally:
+        if original_max_length is not None:
+            Config.MAX_RESPONSE_LENGTH = original_max_length
+        else:
+            del Config.MAX_RESPONSE_LENGTH
+
 def test_get_response_basic():
     # Mock retriever
     mock_retriever = MagicMock()
