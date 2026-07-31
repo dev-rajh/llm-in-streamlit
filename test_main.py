@@ -274,6 +274,27 @@ def test_create_context_oom_dos():
     finally:
         Config.MAX_TEXT_LENGTH = original_max
 
+def test_llm_response_oom_dos():
+    # 🛡️ Sentinel: Verify LLM response truncates correctly to prevent OOM DoS
+    mock_client_instance = MagicMock()
+
+    def mock_stream(*args, **kwargs):
+        while True:
+            yield {'message': {'content': 'A' * 1000}}
+
+    mock_client_instance.chat.side_effect = mock_stream
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+    sys.modules['ollama'].Client.reset_mock()
+
+    from main import chat_without_pdf, Config
+    original_max = getattr(Config, 'MAX_RESPONSE_LENGTH', 50000)
+    Config.MAX_RESPONSE_LENGTH = 5000
+    try:
+        result = chat_without_pdf("test prompt", "test-model")
+        assert len(result) == Config.MAX_RESPONSE_LENGTH
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
+
 def test_process_pdf_subprocess_timeout():
     # 🛡️ Sentinel: Test timeout handling for subprocess.run to verify DoS mitigation
     from main import process_pdf
