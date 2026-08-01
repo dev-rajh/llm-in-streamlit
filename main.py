@@ -34,6 +34,7 @@ class Config:
     OLLAMA_API_BASE_URL = "http://localhost:11434"
     HUGGING_FACE_EMBEDDINGS_DEVICE_TYPE = "cpu"
     MAX_TEXT_LENGTH = 50000000
+    MAX_RESPONSE_LENGTH = 100000
 
 @st.cache_resource
 def get_io_executor():
@@ -250,6 +251,10 @@ def get_response(query, retriever, model, base_url, template):
         for chunk in client.chat(model=model, messages=[{'role': 'user', 'content': prompt}], stream=True):
             if 'message' in chunk and 'content' in chunk['message']:
                 response += chunk['message']['content']
+                # 🛡️ Sentinel: Enforce maximum response length to prevent OOM DoS from infinite streaming
+                if len(response) > Config.MAX_RESPONSE_LENGTH:
+                    response = response[:Config.MAX_RESPONSE_LENGTH] + "\n\n[Warning: Response truncated due to length limits]"
+                    break
     except Exception as e:
         print(f"Error communicating with Ollama API: {e}")
         return "An error occurred while communicating with the AI service. Please try again later."
@@ -264,6 +269,10 @@ def chat_without_pdf(prompt, selected_model):
         for chunk in client.chat(model=selected_model, messages=[{'role': 'user', 'content': prompt}], stream=True):
             if 'message' in chunk and 'content' in chunk['message']:
                 response += chunk['message']['content']
+                # 🛡️ Sentinel: Enforce maximum response length to prevent OOM DoS from infinite streaming
+                if len(response) > Config.MAX_RESPONSE_LENGTH:
+                    response = response[:Config.MAX_RESPONSE_LENGTH] + "\n\n[Warning: Response truncated due to length limits]"
+                    break
     except Exception as e:
         print(f"Error communicating with Ollama API: {e}")
         return "An error occurred while communicating with the AI service. Please try again later."
