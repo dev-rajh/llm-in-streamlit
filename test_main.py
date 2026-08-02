@@ -53,6 +53,29 @@ def test_split_text_into_chunks_valid():
     chunks = split_text_into_chunks("hello world", 10, 5)
     assert len(chunks) > 0
 
+def test_llm_response_length_dos():
+    # 🛡️ Sentinel: Verify LLM response length is capped to prevent OOM DoS
+    from main import Config, get_response
+    mock_retriever = MagicMock()
+    mock_retriever.get_relevant_documents.return_value = []
+
+    mock_client_instance = MagicMock()
+    sys.modules['ollama'].Client.return_value = mock_client_instance
+
+    def mock_stream(*args, **kwargs):
+        while True:
+            yield {'message': {'content': 'A' * 1000}}
+
+    mock_client_instance.chat.side_effect = mock_stream
+
+    original_max = Config.MAX_RESPONSE_LENGTH
+    try:
+        Config.MAX_RESPONSE_LENGTH = 5000
+        result = get_response("test query", mock_retriever, "test-model", "http://test", "$context $question")
+        assert len(result) == Config.MAX_RESPONSE_LENGTH
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
+
 def test_get_response_basic():
     # Mock retriever
     mock_retriever = MagicMock()

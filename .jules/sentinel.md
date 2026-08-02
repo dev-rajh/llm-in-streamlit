@@ -74,3 +74,8 @@
 **Vulnerability:** The application was using `\n\n.join()` on a potentially very large array of text chunks in `create_context()` without any length limits.
 **Learning:** If an attacker can inject excessively large or numerous text chunks, building the entire concatenated string in memory before processing can cause an Out-Of-Memory (OOM) Denial of Service (DoS) vulnerability.
 **Prevention:** When concatenating large arrays of text chunks, avoid building the entire string in memory at once. Instead, iteratively accumulate the chunks and check the total length during assembly, stopping or truncating when the maximum allowed length (e.g., `Config.MAX_TEXT_LENGTH`) is reached.
+
+## 2026-06-25 - Prevent OOM DoS via Unbounded LLM Response Streaming
+**Vulnerability:** The application was missing an upper limit on response length when reading LLM generated messages from streaming requests.
+**Learning:** If an LLM backend (like Ollama) returns an excessively large response (due to a bug or malicious prompt), iterating over the stream and appending chunks directly into a single string in memory can cause an Out-Of-Memory (OOM) error, resulting in a Denial of Service.
+**Prevention:** To prevent memory exhaustion/Out-Of-Memory (OOM) Denial of Service (DoS) vulnerabilities when streaming responses from an LLM, enforce a strict maximum response length boundary (e.g., `MAX_RESPONSE_LENGTH`) inside the streaming chunk loop. Gracefully truncate the response and break the loop if the limit is exceeded.
