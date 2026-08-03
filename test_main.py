@@ -303,3 +303,54 @@ def test_process_pdf_subprocess_timeout():
             # Check if it fell back to pypdf correctly and processed the text
             assert len(chunks) > 0
             assert chunks[0].page_content == "fallback pypdf text\n"
+
+def test_get_response_oom_dos():
+    # 🛡️ Sentinel: Verify maximum response length boundary to prevent OOM DoS
+    from main import Config
+    original_max = Config.MAX_RESPONSE_LENGTH
+    try:
+        Config.MAX_RESPONSE_LENGTH = 50
+
+        mock_retriever = MagicMock()
+        mock_retriever.get_relevant_documents.return_value = []
+
+        mock_client_instance = MagicMock()
+        sys.modules['ollama'].Client.return_value = mock_client_instance
+
+        def mock_stream(*args, **kwargs):
+            while True:
+                yield {'message': {'content': 'A' * 10}}
+
+        mock_client_instance.chat.side_effect = mock_stream
+
+        result = get_response("test query", mock_retriever, "test-model", "http://test", "$context $question")
+
+        assert len(result) > 50  # includes the warning message
+        assert result.startswith("A" * 50)
+        assert "[Warning: Response truncated due to length limits.]" in result
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
+
+def test_chat_without_pdf_oom_dos():
+    # 🛡️ Sentinel: Verify maximum response length boundary to prevent OOM DoS
+    from main import Config, chat_without_pdf
+    original_max = Config.MAX_RESPONSE_LENGTH
+    try:
+        Config.MAX_RESPONSE_LENGTH = 50
+
+        mock_client_instance = MagicMock()
+        sys.modules['ollama'].Client.return_value = mock_client_instance
+
+        def mock_stream(*args, **kwargs):
+            while True:
+                yield {'message': {'content': 'A' * 10}}
+
+        mock_client_instance.chat.side_effect = mock_stream
+
+        result = chat_without_pdf("test query", "test-model")
+
+        assert len(result) > 50
+        assert result.startswith("A" * 50)
+        assert "[Warning: Response truncated due to length limits.]" in result
+    finally:
+        Config.MAX_RESPONSE_LENGTH = original_max
