@@ -303,3 +303,38 @@ def test_process_pdf_subprocess_timeout():
             # Check if it fell back to pypdf correctly and processed the text
             assert len(chunks) > 0
             assert chunks[0].page_content == "fallback pypdf text\n"
+
+def test_get_response_oom_mitigation():
+    from main import get_response, Config, Document
+    original_max = Config.MAX_RESPONSE_LENGTH
+    Config.MAX_RESPONSE_LENGTH = 100
+    mock_retriever = MagicMock()
+    mock_retriever.get_relevant_documents.return_value = []
+
+    with patch('main.ollama.Client') as mock_client_class:
+        mock_client_instance = MagicMock()
+        mock_client_class.return_value = mock_client_instance
+        def mock_stream(*args, **kwargs):
+            while True:
+                yield {'message': {'content': 'chunk '}}
+        mock_client_instance.chat.side_effect = mock_stream
+        template = "$context $question"
+        result = get_response("test query", mock_retriever, "test-model", "http://test", template)
+        assert len(result) <= Config.MAX_RESPONSE_LENGTH
+        Config.MAX_RESPONSE_LENGTH = original_max
+
+def test_chat_without_pdf_oom_mitigation():
+    from main import chat_without_pdf, Config
+    original_max = Config.MAX_RESPONSE_LENGTH
+    Config.MAX_RESPONSE_LENGTH = 100
+
+    with patch('main.ollama.Client') as mock_client_class:
+        mock_client_instance = MagicMock()
+        mock_client_class.return_value = mock_client_instance
+        def mock_stream(*args, **kwargs):
+            while True:
+                yield {'message': {'content': 'chunk '}}
+        mock_client_instance.chat.side_effect = mock_stream
+        result = chat_without_pdf("test prompt", "test-model")
+        assert len(result) <= Config.MAX_RESPONSE_LENGTH
+        Config.MAX_RESPONSE_LENGTH = original_max
